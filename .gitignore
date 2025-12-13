@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables
+.env
+.env.local
+
+# IDE/Editor
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# ContextBox specific
+.memory/
+backups/
+embeddings_cache/
+exports/
+
+# Archives
+*.zip
+
+# Large/temp files
+os
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ML Models
+*.pt
+*.pth
+*.onnx
+*.bin

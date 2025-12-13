@@ -1,0 +1,99 @@
+{
+  "profile": "example",
+  "debug": false,
+  "data_directory": "/home/user/.contextbox/data",
+  "temp_directory": "/tmp/contextbox",
+  "database": {
+    "path": "contextbox.db",
+    "backup_enabled": true,
+    "backup_interval": 24,
+    "backup_retention": 7,
+    "auto_vacuum": true,
+    "cache_size": 1000,
+    "timeout": 30,
+    "max_retries": 3,
+    "connection_pool_size": 5
+  },
+  "capture": {
+    "screenshot_enabled": true,
+    "screenshot_format": "png",
+    "screenshot_quality": 95,
+    "auto_screenshot": false,
+    "screenshot_interval": 10,
+    "clipboard_monitor": true,
+    "active_window_capture": true,
+    "extract_text_automatically": true,
+    "extract_urls_automatically": true,
+    "artifact_retention": 30,
+    "compression_enabled": true,
+    "max_screenshot_size": 10
+  },
+  "content_extraction": {
+    "enabled": true,
+    "extract_urls": true,
+    "extract_text": true,
+    "extract_images": true,
+    "ocr_enabled": true,
+    "ocr_languages": ["eng", "spa", "fra"],
+    "ocr_min_confidence": 70,
+    "url_timeout": 30,
+    "max_url_content_length": 100000,
+    "store_extracted_content": true,
+    "extract_metadata": true,
+    "follow_redirects": true,
+    "respect_robots_txt": true,
+    "rate_limit_delay": 1.0
+  },
+  "llm": {
+    "provider": "openai",
+    "api_key": "your-api-key-here",
+    "api_base": null,
+    "model": "gpt-3.5-turbo",
+    "max_tokens": 2000,
+    "temperature": 0.7,
+    "timeout": 60,
+    "retry_attempts": 3,
+    "local_model_path": null,
+    "embedding_model": "text-embedding-ada-002"
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file_enabled": true,
+    "file_path": "contextbox.log",
+    "file_max_size": 10,
+    "file_backup_count": 5,
+    "console_enabled": true,
+    "structured_logging": false,
+    "log_to_database": false
+  },
+  "ui": {
+    "theme": "dark",
+    "language": "en",
+    "auto_start": false,
+    "minimize_to_tray": true,
+    "show_notifications": true,
+    "window_geometry": {
+      "width": 1200,
+      "height": 800,
+      "x": 100,
+      "y": 100
+    },
+    "last_opened_tab": "overview"
+  },
+  "security": {
+    "encrypt_database": false,
+    "encrypt_artifacts": false,
+    "api_key_encryption": true,
+    "audit_logging": true,
+    "session_timeout": 3600,
+    "max_file_size": 100,
+    "allowed_file_types": [
+      ".txt", ".json", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".doc", ".docx"
+    ],
+    "scan_for_malware": false
+  },
+  "version": "1.0",
+  "created_at": "2025-11-05T04:44:11",
+  "updated_at": "2025-11-05T04:44:11"
+}

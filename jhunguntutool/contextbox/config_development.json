@@ -1,0 +1,99 @@
+{
+  "profile": "development",
+  "debug": true,
+  "data_directory": "./data",
+  "temp_directory": "./tmp",
+  "database": {
+    "path": "contextbox_dev.db",
+    "backup_enabled": false,
+    "backup_interval": 24,
+    "backup_retention": 7,
+    "auto_vacuum": false,
+    "cache_size": 100,
+    "timeout": 10,
+    "max_retries": 1,
+    "connection_pool_size": 2
+  },
+  "capture": {
+    "screenshot_enabled": true,
+    "screenshot_format": "png",
+    "screenshot_quality": 100,
+    "auto_screenshot": false,
+    "screenshot_interval": 10,
+    "clipboard_monitor": true,
+    "active_window_capture": false,
+    "extract_text_automatically": true,
+    "extract_urls_automatically": true,
+    "artifact_retention": 1,
+    "compression_enabled": false,
+    "max_screenshot_size": 50
+  },
+  "content_extraction": {
+    "enabled": true,
+    "extract_urls": true,
+    "extract_text": true,
+    "extract_images": true,
+    "ocr_enabled": true,
+    "ocr_languages": ["eng"],
+    "ocr_min_confidence": 50,
+    "url_timeout": 60,
+    "max_url_content_length": 500000,
+    "store_extracted_content": false,
+    "extract_metadata": true,
+    "follow_redirects": false,
+    "respect_robots_txt": false,
+    "rate_limit_delay": 0.1
+  },
+  "llm": {
+    "provider": "local",
+    "api_key": null,
+    "api_base": "http://localhost:11434",
+    "model": "llama2:7b",
+    "max_tokens": 1000,
+    "temperature": 0.9,
+    "timeout": 30,
+    "retry_attempts": 1,
+    "local_model_path": "./models/llama2-7b.gguf",
+    "embedding_model": "all-MiniLM-L6-v2"
+  },
+  "logging": {
+    "level": "DEBUG",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s",
+    "file_enabled": true,
+    "file_path": "contextbox_dev.log",
+    "file_max_size": 1,
+    "file_backup_count": 2,
+    "console_enabled": true,
+    "structured_logging": false,
+    "log_to_database": false
+  },
+  "ui": {
+    "theme": "light",
+    "language": "en",
+    "auto_start": false,
+    "minimize_to_tray": false,
+    "show_notifications": true,
+    "window_geometry": {
+      "width": 1400,
+      "height": 900,
+      "x": 200,
+      "y": 150
+    },
+    "last_opened_tab": "dev-tools"
+  },
+  "security": {
+    "encrypt_database": false,
+    "encrypt_artifacts": false,
+    "api_key_encryption": false,
+    "audit_logging": false,
+    "session_timeout": 7200,
+    "max_file_size": 500,
+    "allowed_file_types": [
+      ".txt", ".json", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".doc", ".docx", ".md", ".py", ".js", ".html", ".css"
+    ],
+    "scan_for_malware": false
+  },
+  "version": "1.0",
+  "created_at": "2025-11-05T04:44:11",
+  "updated_at": "2025-11-05T04:44:11"
+}

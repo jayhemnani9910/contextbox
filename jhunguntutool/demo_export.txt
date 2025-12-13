@@ -1,0 +1,64 @@
+ContextBox Search Results
+Export Date: 2025-11-04T16:50:42.456512
+Total Results: 5
+================================================================================
+
+Result 1:
+ID: 9
+Type: text
+Title: Pandas Data Analysis
+Relevance: 1.000
+Date: 2025-10-26T16:50:42.388806
+Content Preview: Pandas is a powerful data analysis library for Python programming....
+Context Snippets:
+  Pandas is a powerful data analysis library for Python programming. Pandas Data Analysis
+----------------------------------------
+
+Result 2:
+ID: 8
+Type: url
+Title: NumPy Documentation
+URL: https://numpy.org/
+Relevance: 1.000
+Date: 2025-10-27T16:50:42.388805
+Content Preview: NumPy is the fundamental package for scientific computing with Python....
+Context Snippets:
+  ...fundamental package for scientific computing with Python. NumPy Documentation https://numpy.org/
+----------------------------------------
+
+Result 3:
+ID: 5
+Type: url
+Title: Scikit-learn Documentation
+URL: https://scikit-learn.org/
+Relevance: 1.000
+Date: 2025-10-30T16:50:42.388800
+Content Preview: Machine learning library for Python with tools for data mining and analysis....
+Context Snippets:
+  Machine learning library for Python with tools for data mining and analysis. Scikit-l...
+----------------------------------------
+
+Result 4:
+ID: 1
+Type: url
+Title: Python Programming Language
+URL: https://python.org/
+Relevance: 1.000
+Date: 2025-11-03T16:50:42.388774
+Content Preview: Python is a high-level programming language with clear syntax and powerful libraries....
+Context Snippets:
+  Python is a high-level programming language with clear s...
+  Python is a high-level programming language with clear s...
+  Python is a high-level programming language with clear syntax an...
+----------------------------------------
+
+Result 5:
+ID: 10
+Type: url
+Title: TensorFlow Platform
+URL: https://tensorflow.org/
+Relevance: 0.000
+Date: 2025-10-25T16:50:42.388808
+Content Preview: TensorFlow is an open-source machine learning framework developed by Google....
+----------------------------------------
+
