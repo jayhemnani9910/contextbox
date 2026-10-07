@@ -64,7 +64,7 @@ class SummaryRequest:
     format_type: str = "paragraph"    # paragraph, bullets, key_points
     include_metadata: bool = True
     quality_threshold: float = 0.7
-    enable_progressive: bool = True
+    enable_progressive: bool = False
     enable_caching: bool = True
     max_retries: int = 3
     timeout: int = 30
@@ -570,8 +570,8 @@ class CacheManager:
         try:
             conn.execute('''
                 DELETE FROM summary_cache 
-                WHERE created_at < datetime('now', '-{} days')
-            '''.format(older_than_days))
+                WHERE created_at < datetime('now', ?)
+            ''', (f'-{int(older_than_days)} days',))
             conn.commit()
         finally:
             conn.close()
@@ -608,14 +608,14 @@ class OllamaBackend(LLMBackend):
                 options={
                     'temperature': config.temperature,
                     'top_p': config.top_p,
-                    'max_tokens': config.max_tokens
+                    'num_predict': config.max_tokens
                 }
             )
             
             return response['response'], {
                 'provider': 'ollama',
                 'model': config.name,
-                'total_tokens': response.get('total_duration', 0)
+                'total_tokens': response.get('prompt_eval_count', 0) + response.get('eval_count', 0)
             }
             
         except Exception as e:
@@ -644,9 +644,9 @@ class OpenAIBackend(LLMBackend):
         try:
             response = self.client.chat.completions.create(
                 model=config.name,
+                # prompt already contains the content, so send it once
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": f"Summarize the following content:\n\n{content}"}
+                    {"role": "user", "content": prompt}
                 ],
                 temperature=config.temperature,
                 top_p=config.top_p,
@@ -935,6 +935,7 @@ class SummarizationManager:
                 text=brief_result.summary.text + "\n\n[Progressive: Available in detail]",
                 content_type=request.content_type,
                 source_id=request.source_id,
+                quality_score=brief_result.summary.quality_score,
                 metadata={
                     **brief_result.summary.metadata,
                     'progressive': True,
@@ -991,9 +992,10 @@ class SummarizationManager:
             quality_metrics = self.quality_assessor.assess_quality(
                 chunk['text'], formatted_summary, request
             )
+            summary_content.quality_score = quality_metrics['overall']
             
-            # Check quality threshold
-            if quality_metrics['overall'] < request.quality_threshold:
+            # Check quality threshold; once retries run out, keep this result
+            if quality_metrics['overall'] < request.quality_threshold and request.max_retries > 0:
                 # Try again with adjusted parameters
                 return self._retry_with_adjustment(chunk, request, start_time)
             
@@ -1081,6 +1083,7 @@ Section summaries:
         quality_metrics = self.quality_assessor.assess_quality(
             request.content, formatted_summary, request
         )
+        summary_content.quality_score = quality_metrics['overall']
         
         return SummaryResult(
             summary=summary_content,
@@ -1096,17 +1099,21 @@ Section summaries:
             model_used=llm_info.get('model')
         )
     
-    def _select_backend(self, request: SummaryRequest) -> LLMBackend:
-        """Select the appropriate LLM backend."""
+    def _select_provider(self) -> str:
+        """Pick the provider name whose backend will be used."""
         # Try to get preferred backend from configuration
         if self.config.default_provider and self.config.default_provider in self.backends:
-            return self.backends[self.config.default_provider]
+            return self.config.default_provider
         
         # Fallback to any available backend
         if self.backends:
-            return list(self.backends.values())[0]
+            return next(iter(self.backends))
         
         raise ServiceUnavailableError("No LLM backends available")
+    
+    def _select_backend(self, request: SummaryRequest) -> LLMBackend:
+        """Select the appropriate LLM backend."""
+        return self.backends[self._select_provider()]
     
     def _get_model_config(self, request: SummaryRequest) -> ModelConfig:
         """Get model configuration for the request."""
@@ -1114,10 +1121,10 @@ Section summaries:
         # In a real implementation, this would be more sophisticated
         from .config import ModelConfig, ModelType
         
-        # Try to get a model from the selected backend's provider
-        for provider_name, provider_config in self.config.providers.items():
-            if provider_name in self.backends and provider_config.default_model:
-                return provider_config.get_default_model()
+        # Use the model of the same provider _select_backend picks
+        provider_config = self.config.providers.get(self._select_provider())
+        if provider_config and provider_config.default_model:
+            return provider_config.get_default_model()
         
         # Fallback to a simple model config
         return ModelConfig(
@@ -1173,7 +1180,7 @@ Section summaries:
         
         if request.format_type == 'bullets':
             # Ensure bullet points are properly formatted
-            summary = re.sub(r'^(\d+\.|\-|\*)', lambda m: f"- {m.group(0)[2:].strip()}", summary, flags=re.MULTILINE)
+            summary = re.sub(r'^(?:\d+\.|-|\*)\s+', '- ', summary, flags=re.MULTILINE)
         
         return summary
     
@@ -1193,7 +1200,7 @@ Section summaries:
             quality_threshold=0.5,  # Lower quality threshold
             enable_progressive=False,
             enable_caching=request.enable_caching,
-            max_retries=0,  # Prevent infinite recursion
+            max_retries=request.max_retries - 1,
             timeout=request.timeout
         )
         
@@ -1472,9 +1479,10 @@ class DatabaseIntegratedSummarizer(SummarizationManager):
             raise ValueError(f"Artifact {artifact_id} not found")
         
         # Create summary request
+        kwargs.pop('source_id', None)
         request = SummaryRequest(
             content=artifact['text'] or "",
-            content_type=kwargs.get('content_type', artifact['kind']),
+            content_type=kwargs.pop('content_type', artifact['kind']),
             source_id=str(artifact_id),
             **kwargs
         )

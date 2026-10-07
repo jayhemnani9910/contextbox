@@ -151,11 +151,11 @@ class WebPageContent:
     social_links: List[ExtractedLink]
     
     # Technical details
-    response_time: float
     status_code: Optional[int]
-    error: Optional[str]
     content_hash: Optional[str]
     extracted_at: str
+    response_time: float = 0.0
+    error: Optional[str] = None
     
     # Rate limiting info
     is_rate_limited: bool = False
@@ -243,8 +243,8 @@ class TextCleaner:
         
         # Remove footer content
         footer_indicators = [
-            r'\b(?:copyright|©|©\s*\d+|all rights reserved|powered by)\b.*',
-            r'\b(?:privacy policy|terms of service|contact us|sitemap)\b.*',
+            r'\b(?:copyright|©|©\s*\d+|all rights reserved|powered by)\b',
+            r'\b(?:privacy policy|terms of service|contact us|sitemap)\b',
         ]
         
         for pattern in footer_indicators:
@@ -260,10 +260,10 @@ class TextCleaner:
         
         # Remove ad indicators
         ad_patterns = [
-            r'\b(?:advertisement|sponsored|ad|buy now|shop now|click here to buy)\b.*',
+            r'\b(?:advertisement|sponsored|ad|buy now|shop now|click here to buy)\b',
             r'\[ad[^\]]*\]',
             r'<!--\s*ad[\s\S]*?-->',
-            r'\b(?:social media|follow us|share this|like and subscribe)\b.*',
+            r'\b(?:social media|follow us|share this|like and subscribe)\b',
         ]
         
         for pattern in ad_patterns:
@@ -496,8 +496,6 @@ class WebPageExtractor:
         start_time = time.time()
         
         try:
-            self.rate_limiter.wait_if_needed()
-            
             # Fetch the page
             response = self._fetch_page(url)
             
@@ -563,18 +561,8 @@ class WebPageExtractor:
         # Parse HTML
         soup = BeautifulSoup(response.content, 'lxml')
         
-        # Extract content using multiple methods
-        main_content, extraction_method = self._extract_main_content(soup)
-        
-        # Clean content
-        cleaned_content = TextCleaner.clean_content(main_content)
-        
-        # Calculate scores
-        content_score = ContentAnalyzer.calculate_content_score(soup, main_content)
-        readability_score = ContentAnalyzer.calculate_readability_score(cleaned_content)
-        language = ContentAnalyzer.detect_language(cleaned_content)
-        
-        # Extract metadata
+        # Extract metadata and page elements first: the body fallback in
+        # _extract_main_content decomposes parts of the soup
         meta_tags = self._extract_meta_tags(soup)
         open_graph = self._extract_open_graph(soup)
         twitter_cards = self._extract_twitter_cards(soup)
@@ -589,6 +577,17 @@ class WebPageExtractor:
         # Extract basic content
         title = self._extract_title(soup)
         description = self._extract_description(soup)
+        
+        # Extract content using multiple methods
+        main_content, extraction_method = self._extract_main_content(soup)
+        
+        # Clean content
+        cleaned_content = TextCleaner.clean_content(main_content)
+        
+        # Calculate scores
+        content_score = ContentAnalyzer.calculate_content_score(soup, main_content)
+        readability_score = ContentAnalyzer.calculate_readability_score(cleaned_content)
+        language = ContentAnalyzer.detect_language(cleaned_content)
         
         # Calculate hash for deduplication
         content_hash = hashlib.md5(response.content).hexdigest()
@@ -778,16 +777,13 @@ class WebPageExtractor:
         microdata_elements = soup.find_all(attrs={'itemtype': True})
         for element in microdata_elements:
             itemtype = element.get('itemtype', '')
-            if itemtype not in structured_data:
-                structured_data[f'microdata_{itemtype}'] = []
-            
             item_data = {}
             for prop in element.find_all(attrs={'itemprop': True}):
                 prop_name = prop.get('itemprop')
                 prop_value = prop.get_text(strip=True)
                 item_data[prop_name] = prop_value
             
-            structured_data[f'microdata_{itemtype}'].append(item_data)
+            structured_data.setdefault(f'microdata_{itemtype}', []).append(item_data)
         
         return structured_data
     
@@ -883,10 +879,10 @@ class WebPageExtractor:
                     poster=video.get('poster'),
                     width=self._parse_dimension(video.get('width')),
                     height=self._parse_dimension(video.get('height')),
-                    autoplay=video.get('autoplay') == 'autoplay',
-                    controls=video.get('controls') == 'controls',
-                    muted=video.get('muted') == 'muted',
-                    loop=video.get('loop') == 'loop',
+                    autoplay=video.has_attr('autoplay'),
+                    controls=video.has_attr('controls'),
+                    muted=video.has_attr('muted'),
+                    loop=video.has_attr('loop'),
                     provider=self._detect_media_provider(src)
                 )
                 media_elements.append(media)
@@ -902,9 +898,9 @@ class WebPageExtractor:
                     src=src,
                     type='audio',
                     title=audio.get('title'),
-                    autoplay=audio.get('autoplay') == 'autoplay',
-                    controls=audio.get('controls') == 'controls',
-                    loop=audio.get('loop') == 'loop',
+                    autoplay=audio.has_attr('autoplay'),
+                    controls=audio.has_attr('controls'),
+                    loop=audio.has_attr('loop'),
                     provider=self._detect_media_provider(src)
                 )
                 media_elements.append(media)
@@ -1122,7 +1118,8 @@ def integrate_with_contextbox(extractor: WebPageExtractor, capture_data: Dict[st
             },
             'artifacts': []
         }
-        
+        context['capture'].update(capture_data or {})
+
         # Add main content artifact
         context['artifacts'].append({
             'kind': 'webpage_content',

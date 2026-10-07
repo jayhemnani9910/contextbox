@@ -225,12 +225,24 @@ class ConfigManager:
     
     def _create_default_config(self) -> LLMBackendConfig:
         """Create a default configuration."""
-        # Create default rate limit and cost configs
-        rate_limit = RateLimitConfig()
-        cost_config = CostConfig()
+        # Backends look up their provider in __init__, so the default needs one
+        default_model = "gpt-4o-mini"
+        github_models = ProviderConfig(
+            name="github_models",
+            models={
+                default_model: ModelConfig(
+                    name=default_model,
+                    model_type=ModelType.CHAT,
+                    provider="github_models"
+                )
+            },
+            default_model=default_model
+        )
         
         # Create default configuration
         config = LLMBackendConfig(
+            providers={"github_models": github_models},
+            default_provider="github_models",
             enable_logging=True,
             log_level="INFO",
             log_format="json",
@@ -307,11 +319,14 @@ class ConfigManager:
             raise ConfigurationError("No config path specified")
         
         expanded_path = os.path.expanduser(config_path)
-        os.makedirs(os.path.dirname(expanded_path), exist_ok=True)
+        config_dir = os.path.dirname(expanded_path)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
         
         try:
             with open(expanded_path, 'w') as f:
-                json.dump(asdict(config), f, indent=2)
+                json.dump(asdict(config), f, indent=2,
+                          default=lambda o: o.value if isinstance(o, Enum) else str(o))
         except Exception as e:
             raise ConfigurationError(f"Error saving configuration: {e}")
     

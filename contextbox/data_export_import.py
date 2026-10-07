@@ -110,7 +110,9 @@ class DataExporter:
                     results['errors'].append(error_msg)
                     self.logger.error(error_msg)
             
-            # Create backup manifest
+            # Create backup manifest (it reads total_files/success; recomputed below)
+            results['total_files'] = len(results['files_created'])
+            results['success'] = len(results['errors']) == 0
             manifest = self._create_export_manifest(results)
             manifest_file = export_path / 'export_manifest.json'
             with open(manifest_file, 'w') as f:
@@ -493,9 +495,10 @@ class DataImporter:
     Comprehensive data importer for ContextBox.
     """
     
-    def __init__(self, db_path: str = 'contextbox.db'):
+    def __init__(self, db_path: str = 'contextbox.db', backup_dir: str = '.'):
         """Initialize data importer."""
         self.db_path = db_path
+        self.backup_dir = Path(backup_dir)
         self.logger = logging.getLogger(__name__)
         
         # Import configuration
@@ -732,7 +735,7 @@ class DataImporter:
         
         # Validate capture data
         if data.get('captures'):
-            for i, capture in enumerate(data['captaces'][:5]):  # Validate first 5
+            for i, capture in enumerate(data['captures'][:5]):  # Validate first 5
                 if 'created_at' not in capture:
                     validation_result['warnings'].append(f"Capture {i+1} missing created_at")
         
@@ -754,11 +757,12 @@ class DataImporter:
                 conn.execute("PRAGMA foreign_keys = OFF")  # Disable for faster import
                 conn.execute("BEGIN TRANSACTION")
                 
-                # Import captures
+                # Import captures; captures get new ids, so remember old id -> new id
+                capture_id_map = {}
                 if data.get('captures'):
-                    for capture in data['captaces']:
+                    for capture in data['captures']:
                         try:
-                            conn.execute("""
+                            cursor = conn.execute("""
                                 INSERT INTO captures (created_at, source_window, screenshot_path, clipboard_text, notes)
                                 VALUES (?, ?, ?, ?, ?)
                             """, (
@@ -768,6 +772,8 @@ class DataImporter:
                                 capture.get('clipboard_text'),
                                 capture.get('notes')
                             ))
+                            if capture.get('id') is not None:
+                                capture_id_map[str(capture['id'])] = cursor.lastrowid
                             stats['captures'] += 1
                         except Exception as e:
                             self.logger.warning(f"Failed to import capture: {e}")
@@ -779,7 +785,8 @@ class DataImporter:
                             # Map capture_id if available
                             capture_id = None
                             if artifact.get('capture_id'):
-                                capture_id = int(artifact['capture_id'])
+                                old_id = str(artifact['capture_id'])
+                                capture_id = capture_id_map.get(old_id, int(old_id))
                             
                             conn.execute("""
                                 INSERT INTO artifacts (capture_id, kind, url, title, text, metadata_json)
@@ -835,18 +842,20 @@ class DataImporter:
         """Create backup of current database."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = f"backup_contextbox_{timestamp}.db"
+            # Same location and name pattern as ContextBoxDataManager.create_backup
+            self.backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_path = self.backup_dir / f"contextbox_backup_{timestamp}.db"
             
             with sqlite3.connect(self.db_path) as conn:
                 backup_conn = sqlite3.connect(backup_path)
                 conn.backup(backup_conn)
                 backup_conn.close()
             
-            backup_size = Path(backup_path).stat().st_size / (1024 * 1024)
+            backup_size = backup_path.stat().st_size / (1024 * 1024)
             
             return {
                 'success': True,
-                'backup_path': backup_path,
+                'backup_path': str(backup_path),
                 'backup_size_mb': backup_size
             }
             
@@ -890,14 +899,14 @@ class ContextBoxDataManager:
         self.db_path = db_path
         self.logger = logging.getLogger(__name__)
         
-        # Initialize components
-        self.exporter = DataExporter(db_path)
-        self.importer = DataImporter(db_path)
-        
         # Export/import directories
         self.export_dir = Path('./exports')
         self.import_dir = Path('./imports')
         self.backup_dir = Path('./backups')
+        
+        # Initialize components
+        self.exporter = DataExporter(db_path)
+        self.importer = DataImporter(db_path, backup_dir=self.backup_dir)
         
         # Create directories
         for directory in [self.export_dir, self.import_dir, self.backup_dir]:

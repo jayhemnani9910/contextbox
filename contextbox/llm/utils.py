@@ -16,7 +16,7 @@ from .base import (
 )
 from .exceptions import (
     RateLimiterError, CostTrackingError, ServiceUnavailableError, 
-    AuthenticationError
+    AuthenticationError, RateLimitError, TokenLimitError, ModelNotFoundError
 )
 
 

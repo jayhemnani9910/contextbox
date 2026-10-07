@@ -14,5 +14,5 @@ sys.path.insert(0, current_dir)
 
 if __name__ == '__main__':
     # Import and run CLI
-    from contextbox.cli import main
-    main()
+    from contextbox.cli import cli
+    cli()

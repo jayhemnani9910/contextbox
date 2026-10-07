@@ -22,7 +22,7 @@ import logging
 import re
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Union, Tuple, Set
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -218,6 +218,19 @@ class QuestionClassifier:
         return min(confidence, 1.0)
 
 
+def _capture_ids_since(database: ContextDatabase, capture_ids: Set[int], since_date: datetime) -> Set[int]:
+    """Return the capture ids created at or after since_date (UTC, like captures.created_at)."""
+    if not capture_ids:
+        return set()
+    placeholders = ','.join('?' * len(capture_ids))
+    with database._get_connection() as conn:
+        cursor = conn.execute(
+            f"SELECT id FROM captures WHERE id IN ({placeholders}) AND created_at >= ?",
+            (*capture_ids, since_date.strftime('%Y-%m-%d %H:%M:%S'))
+        )
+        return {row[0] for row in cursor.fetchall()}
+
+
 class ContentRetriever:
     """Retrieves and ranks content from the ContextBox database."""
     
@@ -264,7 +277,7 @@ class ContentRetriever:
             keywords = self._extract_keywords(question)
             
             # Get time-based filter
-            since_date = datetime.now() - timedelta(days=time_window_days)
+            since_date = datetime.now(timezone.utc) - timedelta(days=time_window_days)
             
             # Retrieve artifacts
             all_sources = []
@@ -272,12 +285,19 @@ class ContentRetriever:
             # Search by keywords
             for keyword in keywords:
                 if len(keyword) >= 3:  # Only search for meaningful keywords
-                    sources = self._search_by_keyword(keyword, max_results // len(keywords))
+                    sources = self._search_by_keyword(keyword, max(1, max_results // len(keywords)))
                     all_sources.extend(sources)
+            all_sources = self._filter_since(all_sources, since_date)
             
             # If no keyword matches, search more broadly
             if not all_sources:
-                all_sources = self._search_all_content(max_results // 2)
+                all_sources = self._filter_since(self._search_all_content(max_results // 2), since_date)
+            
+            # The same artifact can match several keywords
+            unique_sources = {}
+            for source in all_sources:
+                unique_sources.setdefault(source.artifact_id, source)
+            all_sources = list(unique_sources.values())
             
             # Rank and filter results
             ranked_sources = self._rank_sources(all_sources, keywords, question_type)
@@ -310,6 +330,11 @@ class ContentRetriever:
         keywords = [word for word in words if len(word) >= 3 and word not in stop_words]
         
         return keywords[:10]  # Limit to top 10 keywords
+    
+    def _filter_since(self, sources: List[Source], since_date: datetime) -> List[Source]:
+        """Keep only sources whose capture was created at or after since_date."""
+        recent = _capture_ids_since(self.database, {s.capture_id for s in sources}, since_date)
+        return [s for s in sources if s.capture_id in recent]
     
     def _search_by_keyword(self, keyword: str, limit: int) -> List[Source]:
         """Search for artifacts containing a specific keyword."""
@@ -350,7 +375,7 @@ class ContentRetriever:
             url=artifact.get('url'),
             title=artifact.get('title'),
             kind=artifact.get('kind'),
-            confidence=artifact.get('metadata', {}).get('confidence'),
+            confidence=(artifact.get('metadata') or {}).get('confidence'),
             timestamp=datetime.now(),  # Default to now, can be improved
             relevance_score=0.0
         )
@@ -1075,7 +1100,7 @@ class QASystem:
             List of matching content items
         """
         try:
-            since_date = datetime.now() - timedelta(days=time_window_days)
+            since_date = datetime.now(timezone.utc) - timedelta(days=time_window_days)
             
             # Use the database search method
             results = []
@@ -1087,11 +1112,13 @@ class QASystem:
                 )
                 results.extend(type_results)
             
+            recent = _capture_ids_since(self.database, {r['capture_id'] for r in results}, since_date)
+            
             # Deduplicate and sort by relevance
             seen_ids = set()
             unique_results = []
             for result in results:
-                if result['id'] not in seen_ids:
+                if result['capture_id'] in recent and result['id'] not in seen_ids:
                     seen_ids.add(result['id'])
                     unique_results.append(result)
             
@@ -1197,7 +1224,7 @@ class QASystem:
         expired_sessions = []
         
         for session_id, session in self.active_sessions.items():
-            if (current_time - session['created_at']).seconds > self.session_timeout:
+            if (current_time - session['created_at']).total_seconds() > self.session_timeout:
                 expired_sessions.append(session_id)
         
         for session_id in expired_sessions:

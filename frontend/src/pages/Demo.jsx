@@ -52,7 +52,9 @@ Total: 3 contexts`,
     delay: 800,
   },
   ask: {
-    output: `🤔 Processing your question...
+    output: `(Example only, not implemented in the CLI)
+
+🤔 Processing your question...
 
 Based on your captured contexts, here's what I found:
 

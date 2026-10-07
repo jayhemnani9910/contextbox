@@ -215,6 +215,7 @@ class DatabaseIndexing:
         """Get database index statistics."""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
                 # Get index list
                 cursor = conn.execute("PRAGMA index_list(captures)")
                 capture_indexes = [dict(row) for row in cursor.fetchall()]
@@ -248,9 +249,9 @@ class DatabaseIndexing:
             with sqlite3.connect(self.db_path) as conn:
                 # Drop all indexes
                 conn.execute("DROP INDEX IF EXISTS idx_captures_created_at")
-                conn.execute("DROP INDEX IF NOT EXISTS idx_artifacts_capture_id")
-                conn.execute("DROP INDEX IF NOT EXISTS idx_artifacts_kind")
-                conn.execute("DROP INDEX IF NOT EXISTS idx_artifacts_url")
+                conn.execute("DROP INDEX IF EXISTS idx_artifacts_capture_id")
+                conn.execute("DROP INDEX IF EXISTS idx_artifacts_kind")
+                conn.execute("DROP INDEX IF EXISTS idx_artifacts_url")
                 
                 # Recreate indexes
                 return self.create_all_indexes()
@@ -712,8 +713,9 @@ class PerformanceMonitor:
     System performance monitoring for ContextBox.
     """
     
-    def __init__(self):
+    def __init__(self, db_path: str = 'contextbox.db'):
         """Initialize performance monitor."""
+        self.db_path = db_path
         self.logger = logging.getLogger(__name__)
         self.monitoring_active = False
         self.performance_data = []
@@ -770,8 +772,8 @@ class PerformanceMonitor:
             
             # Database size
             db_size = 0
-            if Path('contextbox.db').exists():
-                db_size = Path('contextbox.db').stat().st_size
+            if Path(self.db_path).exists():
+                db_size = Path(self.db_path).stat().st_size
             
             return {
                 'cpu_percent': cpu_percent,
@@ -876,7 +878,7 @@ class ContextBoxPerformanceManager:
         cache_size_mb = self.config.get('cache_size_mb', 100)
         self.cache = DatabaseCache(cache_dir, cache_size_mb)
         
-        self.monitor = PerformanceMonitor()
+        self.monitor = PerformanceMonitor(db_path)
         
         # Apply optimizations
         self._apply_initial_optimizations()
@@ -972,6 +974,10 @@ class ContextBoxPerformanceManager:
         
         # Execute with performance monitoring
         results, metrics = self.query_optimizer.execute_measured_query(query, params)
+        
+        # Any write can make cached SELECT results stale
+        if not query.lstrip().upper().startswith('SELECT'):
+            self.cache.clear_cache()
         
         # Cache result if successful
         if use_cache and results:

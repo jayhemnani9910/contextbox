@@ -8,23 +8,18 @@ and hot-reloading capabilities with support for multiple profiles.
 import json
 import yaml
 import os
-import sys
 import logging
-import argparse
 import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union, Type
 from datetime import datetime
 import threading
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 from dataclasses import dataclass, field, asdict
 import click
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
 from rich.panel import Panel
-from rich.syntax import Syntax
 
 
 @dataclass
@@ -564,6 +559,10 @@ class ConfigManager:
             self.console.print("[yellow]Hot-reload already active[/yellow]")
             return
         
+        # watchdog is optional; only hot-reload needs it
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+        
         if callback:
             self.config_listeners.append(callback)
         
@@ -582,13 +581,13 @@ class ConfigManager:
                         stat = os.stat(filepath)
                         last_modified = stat.st_mtime
                         
-                        if filepath in self.manager.last_modified:
-                            if last_modified > self.manager.last_modified[filepath]:
+                        if filepath in self.last_modified:
+                            if last_modified > self.last_modified[filepath]:
                                 # File changed, reload config
                                 self.manager._reload_config_from_file(filepath)
-                                self.manager.last_modified[filepath] = last_modified
+                                self.last_modified[filepath] = last_modified
                         else:
-                            self.manager.last_modified[filepath] = last_modified
+                            self.last_modified[filepath] = last_modified
                     except Exception as e:
                         logging.warning(f"Error checking config file modification: {e}")
         
@@ -930,310 +929,6 @@ class ConfigWizard:
                 return self.run()
         
         return config
-
-
-# CLI Command Functions
-def config_list_command(args: argparse.Namespace) -> None:
-    """Handle config list command."""
-    try:
-        config_manager = ConfigManager()
-        profiles = config_manager.list_profiles()
-        
-        console = Console()
-        table = Table(title="Configuration Profiles")
-        table.add_column("Profile", style="cyan")
-        table.add_column("Status", style="green")
-        
-        for profile in profiles:
-            status = "Current" if profile == "default" else "Available"
-            table.add_row(profile, status)
-        
-        console.print(table)
-        
-    except Exception as e:
-        print(f"Error listing profiles: {e}")
-        sys.exit(1)
-
-
-def config_show_command(args: argparse.Namespace) -> None:
-    """Handle config show command."""
-    try:
-        config_manager = ConfigManager()
-        profile = getattr(args, 'profile', 'default')
-        
-        if not args.all:
-            config = config_manager.load_config(profile)
-            
-            console = Console()
-            config_dict = config.to_dict()
-            
-            # Pretty print configuration
-            json_str = json.dumps(config_dict, indent=2, ensure_ascii=False)
-            syntax = Syntax(json_str, "json", theme="monokai", line_numbers=True)
-            
-            console.print(Panel(
-                syntax,
-                title=f"Configuration: {profile}",
-                expand=False
-            ))
-        else:
-            # Show all profiles
-            profiles = config_manager.list_profiles()
-            console = Console()
-            
-            for profile_name in profiles:
-                try:
-                    config = config_manager.load_config(profile_name)
-                    config_dict = config.to_dict()
-                    json_str = json.dumps(config_dict, indent=2, ensure_ascii=False)
-                    syntax = Syntax(json_str, "json", theme="monokai", line_numbers=True)
-                    
-                    console.print(Panel(
-                        syntax,
-                        title=f"Configuration: {profile_name}",
-                        expand=False
-                    ))
-                except Exception as e:
-                    console.print(f"[red]Error loading {profile_name}: {e}[/red]")
-        
-    except Exception as e:
-        print(f"Error showing configuration: {e}")
-        sys.exit(1)
-
-
-def config_edit_command(args: argparse.Namespace) -> None:
-    """Handle config edit command."""
-    try:
-        config_manager = ConfigManager()
-        profile = getattr(args, 'profile', 'default')
-        
-        config = config_manager.load_config(profile)
-        
-        if args.key and args.value:
-            # Set specific value
-            config_manager.set_config_value(args.key, args.value)
-            print(f"Set {args.key} = {args.value}")
-        elif args.key:
-            # Get specific value
-            try:
-                value = config_manager.get_config_value(args.key)
-                print(f"{args.key} = {value}")
-            except KeyError as e:
-                print(f"Error: {e}")
-                sys.exit(1)
-        else:
-            # Interactive editing (simplified - would need full TUI for real implementation)
-            print("Interactive editing not implemented in this version.")
-            print("Use --key and --value to set specific values.")
-            sys.exit(1)
-        
-    except Exception as e:
-        print(f"Error editing configuration: {e}")
-        sys.exit(1)
-
-
-def config_create_command(args: argparse.Namespace) -> None:
-    """Handle config create command."""
-    try:
-        config_manager = ConfigManager()
-        source_profile = getattr(args, 'source', 'default')
-        new_profile = args.profile
-        
-        profile_name = config_manager.create_profile(source_profile, new_profile)
-        print(f"Created profile: {profile_name}")
-        
-    except Exception as e:
-        print(f"Error creating profile: {e}")
-        sys.exit(1)
-
-
-def config_delete_command(args: argparse.Namespace) -> None:
-    """Handle config delete command."""
-    try:
-        config_manager = ConfigManager()
-        profile = args.profile
-        
-        if profile == "default":
-            print("Error: Cannot delete default profile")
-            sys.exit(1)
-        
-        if Confirm.ask(f"Delete profile '{profile}'? This cannot be undone."):
-            config_manager.delete_profile(profile)
-            print(f"Deleted profile: {profile}")
-        else:
-            print("Deletion cancelled")
-        
-    except Exception as e:
-        print(f"Error deleting profile: {e}")
-        sys.exit(1)
-
-
-def config_validate_command(args: argparse.Namespace) -> None:
-    """Handle config validate command."""
-    try:
-        config_manager = ConfigManager()
-        profile = getattr(args, 'profile', 'default')
-        
-        config = config_manager.load_config(profile)
-        validator = ConfigValidator()
-        
-        is_valid = validator.validate_config(config)
-        
-        if is_valid:
-            print(f"✓ Configuration '{profile}' is valid")
-        else:
-            print(f"✗ Configuration '{profile}' has errors:")
-            for error in validator.errors:
-                print(f"  Error: {error}")
-            
-            if validator.warnings:
-                print("\nWarnings:")
-                for warning in validator.warnings:
-                    print(f"  Warning: {warning}")
-            
-            sys.exit(1)
-        
-    except Exception as e:
-        print(f"Error validating configuration: {e}")
-        sys.exit(1)
-
-
-def config_wizard_command(args: argparse.Namespace) -> None:
-    """Handle config wizard command."""
-    try:
-        config_manager = ConfigManager()
-        wizard = ConfigWizard(config_manager)
-        
-        config = wizard.run()
-        print(f"Configuration wizard completed. Profile '{config.profile}' created.")
-        
-    except KeyboardInterrupt:
-        print("\nConfiguration wizard cancelled.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error running configuration wizard: {e}")
-        sys.exit(1)
-
-
-def config_export_command(args: argparse.Namespace) -> None:
-    """Handle config export command."""
-    try:
-        config_manager = ConfigManager()
-        profile = getattr(args, 'profile', 'default')
-        
-        config_manager.export_config(profile, args.output)
-        print(f"Configuration exported to: {args.output}")
-        
-    except Exception as e:
-        print(f"Error exporting configuration: {e}")
-        sys.exit(1)
-
-
-def config_import_command(args: argparse.Namespace) -> None:
-    """Handle config import command."""
-    try:
-        config_manager = ConfigManager()
-        
-        profile = config_manager.import_config(args.file, args.profile)
-        print(f"Configuration imported as profile: {profile}")
-        
-    except Exception as e:
-        print(f"Error importing configuration: {e}")
-        sys.exit(1)
-
-
-def config_hot_reload_command(args: argparse.Namespace) -> None:
-    """Handle config hot-reload command."""
-    try:
-        config_manager = ConfigManager()
-        
-        if args.action == 'start':
-            config_manager.start_hot_reload()
-            print("Configuration hot-reload started. Press Ctrl+C to stop.")
-            try:
-                while True:
-                    import time
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                config_manager.stop_hot_reload()
-                print("\nHot-reload stopped.")
-        elif args.action == 'stop':
-            config_manager.stop_hot_reload()
-            print("Configuration hot-reload stopped.")
-        else:
-            print("Invalid action. Use 'start' or 'stop'.")
-            sys.exit(1)
-        
-    except Exception as e:
-        print(f"Error managing hot-reload: {e}")
-        sys.exit(1)
-
-
-def add_config_subcommands(parser: argparse.ArgumentParser) -> None:
-    """Add configuration subcommands to parser."""
-    # This function is deprecated - use add_config_subparsers instead
-    # Keeping for backward compatibility
-    add_config_subparsers(parser)
-
-
-def add_config_subparsers(parser: argparse.ArgumentParser) -> None:
-    """Add configuration subcommands to parser."""
-    config_parser = parser.add_parser('config', help='Configuration management')
-    config_subparsers = config_parser.add_subparsers(dest='config_command', help='Config commands')
-    
-    # config list
-    list_parser = config_subparsers.add_parser('list', help='List configuration profiles')
-    list_parser.set_defaults(func=config_list_command)
-    
-    # config show
-    show_parser = config_subparsers.add_parser('show', help='Show configuration')
-    show_parser.add_argument('--profile', '-p', default='default', help='Profile to show')
-    show_parser.add_argument('--all', action='store_true', help='Show all profiles')
-    show_parser.set_defaults(func=config_show_command)
-    
-    # config edit
-    edit_parser = config_subparsers.add_parser('edit', help='Edit configuration')
-    edit_parser.add_argument('--profile', '-p', default='default', help='Profile to edit')
-    edit_parser.add_argument('--key', help='Configuration key to get/set')
-    edit_parser.add_argument('--value', help='Value to set')
-    edit_parser.set_defaults(func=config_edit_command)
-    
-    # config create
-    create_parser = config_subparsers.add_parser('create', help='Create new profile')
-    create_parser.add_argument('profile', help='New profile name')
-    create_parser.add_argument('--source', '-s', default='default', help='Source profile')
-    create_parser.set_defaults(func=config_create_command)
-    
-    # config delete
-    delete_parser = config_subparsers.add_parser('delete', help='Delete profile')
-    delete_parser.add_argument('profile', help='Profile to delete')
-    delete_parser.set_defaults(func=config_delete_command)
-    
-    # config validate
-    validate_parser = config_subparsers.add_parser('validate', help='Validate configuration')
-    validate_parser.add_argument('--profile', '-p', default='default', help='Profile to validate')
-    validate_parser.set_defaults(func=config_validate_command)
-    
-    # config wizard
-    wizard_parser = config_subparsers.add_parser('wizard', help='Run configuration wizard')
-    wizard_parser.set_defaults(func=config_wizard_command)
-    
-    # config export
-    export_parser = config_subparsers.add_parser('export', help='Export configuration')
-    export_parser.add_argument('--profile', '-p', default='default', help='Profile to export')
-    export_parser.add_argument('output', help='Output file path')
-    export_parser.set_defaults(func=config_export_command)
-    
-    # config import
-    import_parser = config_subparsers.add_parser('import', help='Import configuration')
-    import_parser.add_argument('file', help='Configuration file to import')
-    import_parser.add_argument('--profile', '-p', help='Profile name for imported config')
-    import_parser.set_defaults(func=config_import_command)
-    
-    # config hot-reload
-    hotreload_parser = config_subparsers.add_parser('hot-reload', help='Manage configuration hot-reload')
-    hotreload_parser.add_argument('action', choices=['start', 'stop'], help='Action to perform')
-    hotreload_parser.set_defaults(func=config_hot_reload_command)
 
 
 # Global configuration manager instance

@@ -17,7 +17,8 @@ function Installation() {
 
       <section className="mb-10">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Using pip</h2>
-        <CodeBlock code="pip install contextbox" />
+        <p className="text-gray-600 mb-4">Not on PyPI yet, so install from GitHub:</p>
+        <CodeBlock code="pip install git+https://github.com/jayhemnani9910/contextbox.git" />
       </section>
 
       <section className="mb-10">
@@ -31,22 +32,23 @@ pip install -e ".[all]"`}
 
       <section className="mb-10">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Optional Dependencies</h2>
+        <p className="text-gray-600 mb-4">Run these from the cloned source folder.</p>
         <div className="space-y-4">
           <div>
             <h3 className="font-medium text-gray-900 mb-2">LLM Features (GitHub Models)</h3>
-            <CodeBlock code='pip install contextbox[llm]' />
+            <CodeBlock code='pip install -e ".[llm]"' />
           </div>
           <div>
             <h3 className="font-medium text-gray-900 mb-2">OCR Support</h3>
-            <CodeBlock code='pip install contextbox[ocr]' />
+            <CodeBlock code='pip install -e ".[ocr]"' />
           </div>
           <div>
             <h3 className="font-medium text-gray-900 mb-2">YouTube Extraction</h3>
-            <CodeBlock code='pip install contextbox[youtube]' />
+            <CodeBlock code='pip install -e ".[youtube]"' />
           </div>
           <div>
             <h3 className="font-medium text-gray-900 mb-2">Everything</h3>
-            <CodeBlock code='pip install contextbox[all]' />
+            <CodeBlock code='pip install -e ".[all]"' />
           </div>
         </div>
       </section>
@@ -54,7 +56,8 @@ pip install -e ".[all]"`}
       <section className="mb-10">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Setup GitHub Token</h2>
         <p className="text-gray-600 mb-4">
-          To use AI features (Q&A, summarization), set your GitHub token:
+          The Python LLM backend reads your GitHub token. CLI Q&A and summaries
+          (<code>ask</code>, <code>summarize</code>) are not implemented yet in the CLI.
         </p>
         <CodeBlock code='export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"' />
         <p className="text-gray-500 text-sm mt-2">

@@ -27,7 +27,9 @@ def setup_logging(level: str = 'INFO') -> None:
         log_path = os.path.join(log_dir, 'contextbox.log')
     
     try:
-        ensure_directory(os.path.dirname(log_path))
+        log_dir = os.path.dirname(log_path)
+        if log_dir:  # bare filename means the current directory
+            ensure_directory(log_dir)
         handlers.append(logging.FileHandler(log_path, encoding='utf-8'))
     except (OSError, IOError) as exc:
         fallback_logger = logging.getLogger(__name__)

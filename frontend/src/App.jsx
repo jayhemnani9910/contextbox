@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
@@ -9,12 +9,14 @@ import ApiReference from './pages/ApiReference'
 import Demo from './pages/Demo'
 
 function App() {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen(!menuOpen)} />
       <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-8 ml-64">
+        <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <main className="flex-1 min-w-0 ml-0 lg:ml-64 p-4 sm:p-8 pt-20">
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/installation" element={<Installation />} />

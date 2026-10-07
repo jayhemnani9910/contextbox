@@ -25,7 +25,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 try:
-    from bs4 import BeautifulSoup, NavigableString, Tag
+    from bs4 import BeautifulSoup
     BS4_AVAILABLE = True
 except ImportError:
     BS4_AVAILABLE = False
@@ -191,7 +191,7 @@ class WikipediaExtractor:
         params = {
             'action': 'parse',
             'page': page_title,
-            'prop': 'text|categories|sections|links|images|references|parsetree',
+            'prop': 'text|categories|sections|links|images|parsetree',
             'format': 'json',
             'formatversion': 2,
             'disablepp': True,
@@ -291,8 +291,13 @@ class WikipediaExtractor:
         if 'text' in api_content:
             html_content = api_content['text']
             processed_content = self._extract_and_clean_html(html_content, language)
+            references = processed_content.pop('references', [])
             
             result['content'].update(processed_content)
+            
+            # The parse API has no references prop, so they come from the HTML
+            if self.extract_references:
+                result['references'] = self._extract_references_info(references)
         
         # Extract sections
         if 'sections' in api_content:
@@ -301,8 +306,8 @@ class WikipediaExtractor:
         # Extract categories
         if 'categories' in api_content:
             result['structure']['categories'] = [
-                cat.get('title', '').replace('Category:', '') 
-                for cat in api_content['categories'] if 'title' in cat
+                cat.get('category', '').replace('_', ' ')
+                for cat in api_content['categories'] if cat.get('category')
             ]
         
         # Extract links
@@ -315,10 +320,6 @@ class WikipediaExtractor:
         if self.extract_images and 'images' in api_content:
             wiki_site = f"{language}.wikipedia.org"
             result['media']['images'] = self._extract_image_info(api_content['images'], wiki_site)
-        
-        # Extract references
-        if self.extract_references and 'references' in api_content:
-            result['references'] = self._extract_references_info(api_content['references'])
         
         # Calculate statistics
         result['statistics'] = self._calculate_content_statistics(result['content'])
@@ -354,6 +355,12 @@ class WikipediaExtractor:
             # Parse HTML with BeautifulSoup
             soup = BeautifulSoup(html_content, 'html.parser')
             
+            # Collect references before the cleanup below removes them
+            references = [
+                {'text': (li.select_one('.reference-text') or li).get_text(' ', strip=True)}
+                for li in soup.select('ol.references li')
+            ]
+            
             # Remove unwanted elements
             self._remove_unwanted_elements(soup)
             
@@ -370,7 +377,8 @@ class WikipediaExtractor:
             return {
                 'raw_html': html_content,
                 'main_text': main_text,
-                'lead_section': lead_section
+                'lead_section': lead_section,
+                'references': references
             }
             
         except Exception as e:
@@ -430,31 +438,20 @@ class WikipediaExtractor:
         Returns:
             Lead section text
         """
-        # Find the first heading
-        first_heading = soup.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        # The lead is the top-level paragraphs before the first heading
+        # (modern MediaWiki wraps headings in div.mw-heading)
+        root = soup.find(class_='mw-parser-output') or soup
+        lead_text = []
+        for child in root.find_all(recursive=False):
+            if child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] or 'mw-heading' in child.get('class', []):
+                break
+            if child.name == 'p':
+                text = child.get_text().strip()
+                if text:
+                    lead_text.append(text)
         
-        if first_heading:
-            # Get content until the next heading
-            lead_text = []
-            current = first_heading.next_sibling
-            
-            while current:
-                if hasattr(current, 'name') and current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                    break
-                
-                if isinstance(current, NavigableString):
-                    text = str(current).strip()
-                    if text:
-                        lead_text.append(text)
-                elif isinstance(current, Tag):
-                    # Handle inline elements
-                    text = current.get_text().strip()
-                    if text:
-                        lead_text.append(text)
-                
-                current = current.next_sibling
-            
-            return ' '.join(lead_text)
+        if lead_text:
+            return '\n\n'.join(lead_text)
         
         # Fallback: get first few paragraphs
         paragraphs = soup.find_all('p')[:2]
@@ -477,7 +474,7 @@ class WikipediaExtractor:
         main_text_parts = []
         for p in paragraphs:
             # Skip paragraphs in infoboxes or other unwanted areas
-            if p.find_parent(['table', 'div']):
+            if p.find_parent('table') or p.find_parent(class_=['infobox', 'navbox']):
                 continue
             
             text = p.get_text().strip()
@@ -551,12 +548,12 @@ class WikipediaExtractor:
         
         return processed_sections
     
-    def _extract_image_info(self, images: List[Dict[str, Any]], wiki_site: str) -> List[Dict[str, str]]:
+    def _extract_image_info(self, images: List[str], wiki_site: str) -> List[Dict[str, str]]:
         """
         Extract image information from API data.
         
         Args:
-            images: List of image data from API
+            images: List of image file names from API
             wiki_site: Wikipedia site domain
             
         Returns:
@@ -565,22 +562,23 @@ class WikipediaExtractor:
         processed_images = []
         
         for image in images[:20]:  # Limit to first 20 images
-            image_title = image.get('title', '')
-            if image_title:
+            if image:
+                image_title = f"File:{image}"
+                image_url = f"https://{wiki_site}/wiki/{image_title.replace(' ', '_')}"
                 processed_images.append({
                     'title': image_title,
-                    'wiki_url': f"https://{wiki_site}/wiki/{image_title.replace(' ', '_')}",
-                    'description_url': f"https://{wiki_site}/wiki/File:{image_title.replace(' ', '_')}"
+                    'wiki_url': image_url,
+                    'description_url': image_url
                 })
         
         return processed_images
     
     def _extract_references_info(self, references: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Extract reference information from API data.
+        Extract reference information from the references parsed out of the article HTML.
         
         Args:
-            references: List of reference data from API
+            references: List of {"text": ...} dicts, one per reference
             
         Returns:
             Dictionary with reference count and list

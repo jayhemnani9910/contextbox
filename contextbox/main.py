@@ -4,28 +4,12 @@ Main ContextBox application module.
 
 import logging
 import json
-import os
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from .capture import ContextCapture
 from .database import ContextDatabase
 from .extractors.enhanced_extractors import ContentExtractor, ContentExtractionError
-# Import the actual ContextExtractor directly from extractors.py
-try:
-    from .extractors import EnhancedContextExtractor as ContextExtractorClass
-except (ImportError, TypeError):
-    # Fallback if the package import fails
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "contextbox.extractors_module",
-        os.path.join(os.path.dirname(__file__), 'extractors.py')
-    )
-    if spec and spec.loader:
-        extractors_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(extractors_module)
-        ContextExtractorClass = extractors_module.EnhancedContextExtractor
-    else:
-        ContextExtractorClass = None
+from .extractors import EnhancedContextExtractor as ContextExtractorClass
 from .utils import setup_logging
 from .config import get_config, ContextBoxConfig
 
@@ -60,7 +44,9 @@ class ContextBox:
             self.config_obj = None
             self.config = config
         
-        setup_logging(self.config.get('log_level', 'INFO'))
+        # Profile config nests the level under logging.level; legacy dicts use log_level
+        log_level = (self.config.get('logging') or {}).get('level') or self.config.get('log_level', 'INFO')
+        setup_logging(log_level)
         self.logger = logging.getLogger(__name__)
         
         # Initialize components  
@@ -206,15 +192,7 @@ class ContextBox:
         self.logger.info("Listing stored contexts")
         
         try:
-            # Get database statistics
-            stats = self.database.get_stats()
-            
-            # For now, return database stats since full listing requires more complex queries
-            return {
-                'stats': stats,
-                'message': 'Use database query methods for detailed listings'
-            }
-            
+            return self.database.list_captures(limit=limit)
         except Exception as e:
             self.logger.error(f"Error listing contexts: {e}")
             raise

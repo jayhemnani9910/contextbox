@@ -13,8 +13,6 @@ from datetime import datetime
 from pathlib import Path
 import json
 import queue
-import tkinter as tk
-from tkinter import messagebox
 
 # Try to import notification libraries
 try:
@@ -80,6 +78,7 @@ class NotificationSystem:
         self.notification_queue = queue.Queue()
         self.notification_history: List[Dict[str, Any]] = []
         self.notification_count = 0
+        self._next_notification_id = 0
         
         # Callback functions
         self.quick_capture_callback: Optional[Callable] = None
@@ -209,6 +208,9 @@ class NotificationSystem:
     
     def _show_notification_history_window(self) -> None:
         """Show notification history in a tkinter window."""
+        # Imported here so the module loads on Python builds without Tk
+        import tkinter as tk
+        
         root = tk.Tk()
         root.title("ContextBox - Notification History")
         root.geometry("600x400")
@@ -238,6 +240,9 @@ class NotificationSystem:
     
     def _show_settings_window(self) -> None:
         """Show notification settings window."""
+        import tkinter as tk
+        from tkinter import messagebox
+        
         root = tk.Tk()
         root.title("ContextBox - Notification Settings")
         root.geometry("400x300")
@@ -322,6 +327,9 @@ class NotificationSystem:
     
     def _send_notification(self, notification_data: Dict[str, Any]) -> None:
         """Send a single notification."""
+        if not self.enable_desktop:
+            return
+        
         title = notification_data.get('title', 'ContextBox')
         message = notification_data.get('message', '')
         notification_type = notification_data.get('type', 'info')
@@ -385,12 +393,13 @@ class NotificationSystem:
             notification_type: Type of notification ('capture', 'error', 'success', 'warning', 'info')
             priority: Priority level ('low', 'normal', 'high')
         """
+        self._next_notification_id += 1
         notification_data = {
             'title': title,
             'message': message,
             'type': notification_type,
             'priority': priority,
-            'id': self.notification_count + 1
+            'id': self._next_notification_id
         }
         
         # Add to notification queue

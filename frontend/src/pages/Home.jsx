@@ -9,13 +9,13 @@ const features = [
     icon: Camera,
   },
   {
-    name: 'Semantic Search',
-    description: 'Search across all your captured contexts intelligently.',
+    name: 'Search',
+    description: 'Text search across all your captured contexts.',
     icon: Search,
   },
   {
-    name: 'AI-Powered Q&A',
-    description: 'Ask questions about your captured context using GitHub Models.',
+    name: 'LLM Backend',
+    description: 'GitHub Models client for the Python API. CLI Q&A and summaries are not implemented yet.',
     icon: MessageSquare,
   },
   {
@@ -41,11 +41,11 @@ function Home() {
       {/* Hero */}
       <div className="text-center mb-16">
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          AI-Powered Context Capture
+          Context Capture for Developers
         </h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-8">
-          Capture, organize, and query your digital context with powerful AI assistance.
-          Free LLM access via GitHub Models.
+          Capture screenshots, extract web content, and keep it all in a local SQLite database.
+          LLM backend for GitHub Models included for Python use.
         </p>
         <div className="flex justify-center space-x-4">
           <Link
@@ -66,8 +66,8 @@ function Home() {
       {/* Quick Install */}
       <div className="bg-gray-900 text-white rounded-lg p-6 mb-16">
         <div className="text-center">
-          <p className="text-gray-400 mb-2">Install with pip</p>
-          <code className="text-lg font-mono">pip install contextbox</code>
+          <p className="text-gray-400 mb-2">Install with pip (not on PyPI yet)</p>
+          <code className="text-lg font-mono break-all">pip install git+https://github.com/jayhemnani9910/contextbox.git</code>
         </div>
       </div>
 
@@ -92,13 +92,10 @@ $ contextbox capture
 ✓ Text extracted (1,234 chars)
 ✓ Context stored: ctx_abc123
 
-# Ask questions about it
-$ contextbox ask "What was I working on?"
-Based on your captured context, you were working on...
-
 # Search your contexts
 $ contextbox search "API documentation"
-Found 3 matching contexts...`}</pre>
+🔍 Search Results for 'API documentation'
+✓ Found 3 results!`}</pre>
         </div>
       </div>
     </div>
