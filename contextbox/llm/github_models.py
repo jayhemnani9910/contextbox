@@ -112,12 +112,18 @@ class GitHubModelsBackend(BaseLLMBackend):
 
         # Create minimal config if none provided
         if config is None:
-            from .config import LLMBackendConfig, ProviderConfig
+            from .config import ModelType, ProviderConfig
             config = LLMBackendConfig(
                 providers={
                     "github_models": ProviderConfig(
-                        provider_type="github_models",
-                        enabled=True,
+                        name="github_models",
+                        models={
+                            default_model: ModelConfig(
+                                name=default_model,
+                                model_type=ModelType.CHAT,
+                                provider="github_models",
+                            )
+                        },
                         default_model=default_model,
                     )
                 }

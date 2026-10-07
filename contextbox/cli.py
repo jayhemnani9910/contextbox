@@ -34,7 +34,7 @@ from rich.status import Status
 # ContextBox imports
 try:
     from contextbox.main import ContextBox
-    from contextbox.utils import load_config, get_platform_info, ensure_directory, get_app_data_dir, sanitize_filename, format_timestamp
+    from contextbox.utils import load_config, get_platform_info, ensure_directory, get_app_data_dir, format_timestamp
     from contextbox.config import get_config_manager, get_config
 except ImportError as e:
     print(f"Error importing ContextBox: {e}")
@@ -151,60 +151,9 @@ def display_warning(message: str):
         f"[yellow]⚠️ {message}[/yellow]",
         title="[yellow]⚠️ Warning[/yellow]",
         border_style="yellow",
-        box=box.WARNING
-    )
-    console.print(warning_panel)
-
-def display_info(message: str):
-    """Display formatted info message."""
-    info_panel = Panel(
-        f"[blue]ℹ️ {message}[/blue]",
-        title="[blue]ℹ️ Info[/blue]",
-        border_style="blue",
         box=box.ROUNDED
     )
-    console.print(info_panel)
-
-def format_context_table(contexts: List[Dict]) -> Table:
-    """Format contexts as a rich table."""
-    table = Table(title="📋 Stored Contexts", box=box.ROUNDED)
-    table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Timestamp", style="magenta")
-    table.add_column("Platform", style="green")
-    table.add_column("Status", style="yellow")
-    table.add_column("Screenshot", style="blue")
-    table.add_column("Text", style="blue")
-    table.add_column("URLs", style="red")
-    
-    for context in contexts:
-        context_id = context.get('context_id', 'N/A')[:8] if context.get('context_id') else 'N/A'
-        timestamp = context.get('timestamp', 'N/A')
-        platform = context.get('platform', {}).get('system', 'N/A') if isinstance(context.get('platform'), dict) else str(context.get('platform', 'N/A'))
-        status = context.get('status', 'N/A')
-        
-        # Check for screenshot
-        screenshot = "✓" if context.get('artifacts', {}).get('screenshot') else "✗"
-        
-        # Text length
-        text_content = context.get('extracted', {}).get('text', '')
-        text_len = len(text_content) if text_content else 0
-        text_display = f"{text_len}" if text_len > 0 else "0"
-        
-        # URL count
-        urls = context.get('extracted', {}).get('urls', [])
-        url_count = len(urls) if isinstance(urls, list) else 0
-        
-        table.add_row(
-            context_id,
-            timestamp,
-            platform,
-            status,
-            screenshot,
-            text_display,
-            str(url_count)
-        )
-    
-    return table
+    console.print(warning_panel)
 
 def display_help_header():
     """Display beautiful help header."""
@@ -388,21 +337,6 @@ def extract_urls_enhanced(text: str) -> List[str]:
     all_urls = list(set(urls + www_urls))
     return all_urls
 
-def simulate_llm_processing(description: str, progress: Progress, task_id, delay: float = 2.0):
-    """Simulate LLM processing with realistic progress."""
-    steps = [
-        (20, f"Analyzing {description}..."),
-        (40, f"Processing {description}..."),
-        (60, f"Understanding context..."),
-        (80, f"Generating response..."),
-        (90, f"Formatting output..."),
-        (100, f"Complete!")
-    ]
-    
-    for completed, step_desc in steps:
-        progress.update(task_id, description=step_desc, completed=completed)
-        time.sleep(delay / len(steps))
-
 # CLI Group
 @click.group(invoke_without_command=True)
 @click.option('--version', is_flag=True, help='Show version and exit')
@@ -531,82 +465,9 @@ def capture(output, artifact_dir, no_screenshot, extract_text, extract_urls, int
 @click.option('--all-contexts', is_flag=True, help='Search across all contexts')
 @click.option('--model', type=str, help='LLM model to use')
 def ask(question, context_id, all_contexts, model):
-    """🤔 Ask questions about captured context using AI."""
-    
-    app = get_app()
-    
-    # Check for API key
-    api_key = None
-    config_file = os.path.join(get_app_data_dir(), 'config.json')
-    if os.path.exists(config_file):
-        try:
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-                api_key = config.get('api_key')
-        except Exception:
-            pass
-    
-    if not api_key:
-        if Confirm.ask("🤖 AI features require an API key. Would you like to configure one now?"):
-            api_key = prompt_for_api_key()
-            if not api_key:
-                display_error("API key required for AI features. Use 'contextbox config --api-key' to configure.", exit=False)
-                return
-    
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TimeElapsedColumn(),
-        console=console
-    ) as progress:
-        
-        task = progress.add_task("🤔 Processing your question...", total=100)
-        
-        try:
-            # Get context(s) to analyze
-            contexts = []
-            if context_id:
-                context = app.get_context(context_id)
-                if not context:
-                    display_error(f"Context with ID '{context_id}' not found", exit=False)
-                    return
-                contexts = [context]
-            elif all_contexts:
-                console.print("[yellow]🔍 Searching across all contexts...[/yellow]")
-                # This would implement full search in real implementation
-                contexts = []
-            else:
-                # Use latest context
-                contexts = []
-            
-            if not contexts:
-                console.print("[yellow]⚠️ No contexts found to analyze.[/yellow]")
-                console.print("[dim]💡 Tip: Run 'contextbox capture' first to capture some context[/dim]")
-                return
-            
-            # Simulate AI processing
-            simulate_llm_processing("your question", progress, task, 3.0)
-            
-            # Display Q&A result
-            qa_panel = Panel(
-                f"[bold blue]Question:[/bold blue] {question}\n\n"
-                f"[bold green]Answer:[/bold green]\n"
-                f"Based on the captured context, here's what I found:\n\n"
-                f"🔍 Analysis complete using {'configured LLM' if api_key else 'basic processing'}\n"
-                f"📊 Analyzed {len(contexts)} context(s)\n"
-                f"🤖 AI-powered insights: {'Available' if api_key else 'Requires API key'}\n\n"
-                f"[dim]Note: Full AI integration requires configured API key.[/dim]",
-                title="🤔 Q&A Session",
-                border_style="green",
-                box=box.DOUBLE
-            )
-            console.print("\n" + "="*80)
-            console.print(qa_panel)
-            console.print("="*80)
-            
-        except Exception as e:
-            display_error(f"Failed to process question: {e}", e)
+    """🤔 Ask questions about captured context (not implemented yet)."""
+    console.print("[yellow]contextbox ask is not implemented yet.[/yellow]")
+    sys.exit(1)
 
 @cli.command()
 @click.option('--context-id', type=str, help='Specific context ID to summarize')
@@ -616,149 +477,9 @@ def ask(question, context_id, all_contexts, model):
 @click.option('--output', '-o', type=click.Path(), help='Output file for summary')
 @click.option('--include-metadata', is_flag=True, help='Include metadata in summary')
 def summarize(context_id, all_contexts, format, output, include_metadata):
-    """📝 Generate intelligent summaries of captured contexts."""
-    
-    app = get_app()
-    
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        
-        task = progress.add_task("📝 Analyzing contexts for summary...")
-        
-        try:
-            progress.update(task, description="🔍 Extracting key information...")
-            time.sleep(1)
-            
-            # Get contexts to summarize
-            contexts = []
-            if context_id:
-                context = app.get_context(context_id)
-                if not context:
-                    display_error(f"Context with ID '{context_id}' not found", exit=False)
-                    return
-                contexts = [context]
-            elif all_contexts:
-                console.print("[yellow]📊 Summarizing all contexts...[/yellow]")
-                contexts = []  # Would implement full context retrieval
-            else:
-                contexts = []  # Would get recent contexts
-            
-            if not contexts:
-                console.print("[yellow]⚠️ No contexts found to summarize.[/yellow]")
-                console.print("[dim]💡 Tip: Run 'contextbox capture' first to capture some context[/dim]")
-                return
-            
-            progress.update(task, description="🧠 Generating summary...", completed=70)
-            simulate_llm_processing("context summary", progress, task, 1.5)
-            
-            progress.update(task, description="📄 Formatting summary...", completed=90)
-            time.sleep(0.5)
-            
-            progress.update(task, description="✅ Complete!", completed=100)
-            
-            # Generate summary based on format
-            if format == 'brief':
-                summary_text = """📝 **Brief Summary**
-
-Context captured successfully with platform information, screenshots, and extracted content.
-
-**Key Highlights:**
-• ✅ Screen capture completed
-• ✅ Text extraction performed  
-• ✅ URLs identified and processed
-• ✅ Data stored securely in local database"""
-                
-            elif format == 'detailed':
-                summary_text = f"""📝 **Detailed Summary**
-
-This context capture includes comprehensive data about the user's digital environment:
-
-**Platform Information:**
-• System: {contexts[0].get('platform', {}).get('system', 'Unknown') if contexts else 'Unknown'}
-• Additional context data available
-• Capture timestamp: {contexts[0].get('timestamp', 'Unknown') if contexts else 'Unknown'}
-
-**Extracted Content:**
-• Text content has been processed
-• URLs have been identified and catalogued
-• Screenshot artifacts saved for reference
-
-**Technical Details:**
-• Database storage: {len(contexts)} context(s)
-• Extraction methods: OCR, text parsing, URL detection
-• Status: All operations completed successfully"""
-                
-            elif format == 'bullets':
-                summary_text = """📝 **Summary Points**
-
-**Capture Details:**
-• Context captured from: Current system
-• Screenshots: ✅ Available
-• Text extraction: ✅ Complete
-• URLs found: ✅ Identified
-• Database storage: ✅ Confirmed
-• Status: All operations successful
-
-**Content Analysis:**
-• Platform environment analyzed
-• Digital context preserved
-• Extracted data organized
-• Ready for further analysis"""
-                
-            else:  # executive
-                summary_text = """📝 **Executive Summary**
-
-**Overview:**
-Context capture operation completed successfully with full data extraction and storage.
-
-**Key Metrics:**
-• Capture Success Rate: 100%
-• Data Extraction: Complete
-• Processing Time: Optimal
-• Storage Status: Confirmed
-
-**Business Impact:**
-• Digital context preserved for future reference
-• Automated extraction reduces manual effort
-• Systematic organization enables efficient retrieval
-• Platform-agnostic capture ensures accessibility
-
-**Next Steps:**
-• Context available for AI analysis
-• Ready for advanced querying
-• Suitable for knowledge base building
-• Can be integrated with other workflows"""
-            
-            if include_metadata:
-                summary_text += f"\n\n**Metadata:**\n"
-                summary_text += f"• Total contexts: {len(contexts)}\n"
-                summary_text += f"• Generation time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                summary_text += f"• Summary format: {format}"
-            
-            # Display summary
-            summary_panel = Panel(
-                summary_text,
-                title=f"📝 Summary ({format.title()})",
-                border_style="blue",
-                box=box.ROUNDED
-            )
-            console.print("\n" + "="*70)
-            console.print(summary_panel)
-            console.print("="*70)
-            
-            # Save to file if requested
-            if output:
-                with open(output, 'w') as f:
-                    f.write(summary_text)
-                console.print(f"[green]✅[/green] Summary saved to: {output}")
-            
-            display_success("Summary generated successfully!")
-            
-        except Exception as e:
-            display_error(f"Failed to generate summary: {e}", e)
+    """📝 Summarize captured contexts (not implemented yet)."""
+    console.print("[yellow]contextbox summarize is not implemented yet.[/yellow]")
+    sys.exit(1)
 
 @cli.command()
 @click.argument('query')
@@ -772,251 +493,151 @@ def search(query, context_type, limit, output, fuzzy):
     
     app = get_app()
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
+    try:
+        results = app.database.search_contexts(query, limit)
         
-        task = progress.add_task(f"🔍 Searching for '{query}'...")
+        if not results:
+            search_panel = Panel(
+                f"[yellow]🔍 No results found for: '{query}'[/yellow]\n\n"
+                f"[dim]💡 Try:[/dim]\n"
+                f"• Different search terms\n"
+                f"• Check if you have captured any contexts\n"
+                f"• Run 'contextbox capture' first",
+                title="🔍 Search Results",
+                border_style="yellow",
+                box=box.ROUNDED
+            )
+            console.print("\n" + "="*60)
+            console.print(search_panel)
+            console.print("="*60)
+            return
         
-        try:
-            progress.update(task, description="🔎 Querying database...", completed=30)
-            time.sleep(1)
-            
-            progress.update(task, description="🧠 Analyzing results...", completed=60)
-            simulate_llm_processing("search analysis", progress, task, 1.5)
-            
-            progress.update(task, description="📊 Formatting results...", completed=90)
-            time.sleep(0.5)
-            
-            progress.update(task, description="✅ Search complete!", completed=100)
-            
-            # Mock search results for demonstration
-            mock_results = []
-            
-            # Generate realistic mock results
-            for i in range(min(limit, 5)):
-                mock_results.append({
-                    'context_id': f'ctx_{i+1:03d}',
-                    'timestamp': f'2023-12-{i+1:02d}T10:30:00',
-                    'platform': {'system': ['Linux', 'Windows', 'macOS', 'Ubuntu'][i % 4]},
-                    'status': 'completed',
-                    'text_preview': f'Context containing reference to {query} and related information',
-                    'relevance_score': max(0.5, 0.95 - (i * 0.1)),
-                    'highlights': [f'match for "{query}" in text content'] if i < 3 else []
-                })
-            
-            if not mock_results:
-                search_panel = Panel(
-                    f"[yellow]🔍 No results found for: '{query}'[/yellow]\n\n"
-                    f"[dim]💡 Try:[/dim]\n"
-                    f"• Different search terms\n"
-                    f"• Check if you have captured any contexts\n"
-                    f"• Use broader search criteria\n"
-                    f"• Run 'contextbox capture' first",
-                    title="🔍 Search Results",
-                    border_style="yellow",
-                    box=box.ROUNDED
-                )
-                console.print("\n" + "="*60)
-                console.print(search_panel)
-                console.print("="*60)
-            else:
-                # Display results
-                results_table = Table(title=f"🔍 Search Results for '{query}'", box=box.ROUNDED)
-                results_table.add_column("ID", style="cyan")
-                results_table.add_column("Timestamp", style="magenta")
-                results_table.add_column("Platform", style="green")
-                results_table.add_column("Score", style="blue")
-                results_table.add_column("Preview", style="yellow")
-                results_table.add_column("Matches", style="red")
-                
-                for result in mock_results:
-                    matches = len(result.get('highlights', []))
-                    results_table.add_row(
-                        result['context_id'][:8],
-                        result['timestamp'],
-                        result['platform']['system'],
-                        f"{result['relevance_score']:.2f}",
-                        result['text_preview'][:50] + "...",
-                        str(matches) if matches > 0 else "-"
-                    )
-                
-                console.print("\n" + "="*80)
-                console.print(results_table)
-                console.print("="*80)
-                
-                # Save to file if requested
-                if output:
-                    with open(output, 'w') as f:
-                        json.dump({
-                            'query': query,
-                            'context_type': context_type,
-                            'search_time': datetime.now().isoformat(),
-                            'results': mock_results
-                        }, f, indent=2)
-                    console.print(f"[green]✅[/green] Search results saved to: {output}")
-                
-                display_success(f"Found {len(mock_results)} results!")
-            
-        except Exception as e:
-            display_error(f"Search failed: {e}", e)
+        results_table = Table(title=f"🔍 Search Results for '{query}'", box=box.ROUNDED)
+        results_table.add_column("ID", style="cyan")
+        results_table.add_column("Created", style="magenta")
+        results_table.add_column("Window", style="green")
+        results_table.add_column("Preview", style="yellow")
+        
+        for result in results:
+            preview = result.get('clipboard_text') or result.get('notes') or ''
+            results_table.add_row(
+                str(result.get('id')),
+                str(result.get('created_at') or ''),
+                result.get('source_window') or '-',
+                preview[:50] + ("..." if len(preview) > 50 else "")
+            )
+        
+        console.print("\n" + "="*80)
+        console.print(results_table)
+        console.print("="*80)
+        
+        # Save to file if requested
+        if output:
+            with open(output, 'w') as f:
+                json.dump({
+                    'query': query,
+                    'context_type': context_type,
+                    'search_time': datetime.now().isoformat(),
+                    'results': results
+                }, f, indent=2, default=str)
+            console.print(f"[green]✅[/green] Search results saved to: {output}")
+        
+        display_success(f"Found {len(results)} results!")
+        
+    except Exception as e:
+        display_error(f"Search failed: {e}", e)
 
-@cli.command()
+@cli.command(name='list')
 @click.option('--limit', default=20, help='Maximum number of contexts to show')
 @click.option('--format', type=click.Choice(['table', 'json', 'brief', 'tree']), default='table',
               help='Output format')
 @click.option('--output', '-o', type=click.Path(), help='Output file for list')
 @click.option('--sort', type=click.Choice(['timestamp', 'platform', 'status']), default='timestamp',
               help='Sort order')
-def list(limit, format, output, sort):
+def list_cmd(limit, format, output, sort):
     """📋 List all stored contexts with various display options."""
     
     app = get_app()
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
+    try:
+        contexts = app.database.list_captures(limit=limit)
         
-        task = progress.add_task("📋 Loading contexts...")
+        if not contexts:
+            list_panel = Panel(
+                "[yellow]📭 No contexts found in database[/yellow]\n\n"
+                "[dim]💡 Get started:[/dim]\n"
+                "[cyan]contextbox capture[/cyan] - Capture your first context",
+                title="📋 Context List",
+                border_style="yellow",
+                box=box.ROUNDED
+            )
+            console.print("\n" + "="*60)
+            console.print(list_panel)
+            console.print("="*60)
+            return
         
-        try:
-            progress.update(task, description="🔍 Querying database...", completed=50)
-            time.sleep(1)
+        if format == 'table':
+            list_table = Table(title="📋 Stored Contexts", box=box.ROUNDED)
+            list_table.add_column("ID", style="cyan", no_wrap=True)
+            list_table.add_column("Created", style="magenta")
+            list_table.add_column("Window", style="green")
+            list_table.add_column("Screenshot", style="blue")
             
-            progress.update(task, description="📊 Formatting display...", completed=80)
-            time.sleep(0.5)
-            
-            progress.update(task, description="✅ Complete!", completed=100)
-            
-            # Mock contexts for demonstration
-            contexts = []
-            
-            # Generate realistic mock data
-            for i in range(min(limit, 8)):
-                contexts.append({
-                    'context_id': f'ctx_{i+1:04d}',
-                    'timestamp': f'2023-12-{i+1:02d}T{10+i%8:02d}:30:00',
-                    'platform': {'system': ['Linux', 'Windows', 'macOS', 'Ubuntu', 'Debian'][i % 5]},
-                    'status': 'completed',
-                    'artifacts': {'screenshot': f'screenshot_{i+1}.png'} if i % 2 == 0 else {},
-                    'extracted': {
-                        'text': f'Sample text content for context {i+1} with various information and data points' * (i % 3 + 1),
-                        'urls': [f'https://example{i}.com', f'https://test{i}.org'] if i % 2 == 0 else []
-                    }
-                })
-            
-            if not contexts:
-                list_panel = Panel(
-                    "[yellow]📭 No contexts found in database[/yellow]\n\n"
-                    "[dim]💡 Get started:[/dim]\n"
-                    "[cyan]contextbox capture[/cyan] - Capture your first context",
-                    title="📋 Context List",
-                    border_style="yellow",
-                    box=box.ROUNDED
+            for context in contexts:
+                list_table.add_row(
+                    str(context['id']),
+                    str(context.get('created_at') or ''),
+                    context.get('source_window') or '-',
+                    "📷" if context.get('screenshot_path') else "❌"
                 )
-                console.print("\n" + "="*60)
-                console.print(list_panel)
-                console.print("="*60)
-            else:
-                if format == 'table':
-                    list_table = Table(title="📋 Stored Contexts", box=box.ROUNDED)
-                    list_table.add_column("ID", style="cyan", no_wrap=True)
-                    list_table.add_column("Timestamp", style="magenta")
-                    list_table.add_column("Platform", style="green")
-                    list_table.add_column("Status", style="yellow")
-                    list_table.add_column("Screenshot", style="blue")
-                    list_table.add_column("Text Chars", style="blue")
-                    list_table.add_column("URLs", style="red")
-                    
-                    for context in contexts:
-                        ctx_id = context['context_id'][:8]
-                        timestamp = context['timestamp']
-                        platform = context['platform']['system']
-                        status = context['status']
-                        has_screenshot = "📷" if 'screenshot' in context['artifacts'] else "❌"
-                        text_chars = len(context['extracted'].get('text', ''))
-                        url_count = len(context['extracted'].get('urls', []))
-                        
-                        list_table.add_row(
-                            ctx_id,
-                            timestamp,
-                            platform,
-                            status,
-                            has_screenshot,
-                            f"{text_chars:,}",
-                            str(url_count)
-                        )
-                    
-                    console.print("\n" + "="*80)
-                    console.print(list_table)
-                    console.print("="*80)
-                
-                elif format == 'json':
-                    console.print("\n" + "="*60)
-                    syntax = Syntax(json.dumps(contexts, indent=2), "json", theme="monokai", line_numbers=True)
-                    console.print(syntax)
-                    console.print("="*60)
-                
-                elif format == 'tree':
-                    tree = Tree("📋 Stored Contexts")
-                    for context in contexts:
-                        ctx_id = context['context_id'][:8]
-                        platform = context['platform']['system']
-                        node = tree.add(f"[cyan]{ctx_id}[/cyan] - [green]{platform}[/green]")
-                        
-                        # Add details
-                        node.add(f"[dim]📅 {context['timestamp']}[/dim]")
-                        node.add(f"[dim]📊 Status: {context['status']}[/dim]")
-                        
-                        if 'screenshot' in context['artifacts']:
-                            node.add("📷 Screenshot")
-                        
-                        text_len = len(context['extracted'].get('text', ''))
-                        if text_len > 0:
-                            node.add(f"📝 Text: {text_len:,} chars")
-                        
-                        url_count = len(context['extracted'].get('urls', []))
-                        if url_count > 0:
-                            node.add(f"🔗 URLs: {url_count}")
-                    
-                    console.print("\n" + "="*60)
-                    console.print(tree)
-                    console.print("="*60)
-                
-                else:  # brief
-                    brief_lines = []
-                    for context in contexts:
-                        ctx_id = context['context_id'][:8]
-                        platform = context['platform']['system']
-                        timestamp = context['timestamp']
-                        brief_lines.append(
-                            f"[cyan]{ctx_id}[/cyan] - [green]{platform}[/green] - [yellow]{timestamp}[/yellow]"
-                        )
-                    
-                    list_panel = Panel(
-                        "\n".join(brief_lines),
-                        title="📋 Context List",
-                        border_style="cyan",
-                        box=box.ROUNDED
-                    )
-                    console.print("\n" + "="*60)
-                    console.print(list_panel)
-                    console.print("="*60)
-                
-                # Save to file if requested
-                if output:
-                    with open(output, 'w') as f:
-                        json.dump(contexts, f, indent=2)
-                    console.print(f"[green]✅[/green] Context list saved to: {output}")
-                
-                display_success(f"Found {len(contexts)} contexts!")
             
-        except Exception as e:
-            display_error(f"Failed to list contexts: {e}", e)
+            console.print("\n" + "="*80)
+            console.print(list_table)
+            console.print("="*80)
+        
+        elif format == 'json':
+            console.print("\n" + "="*60)
+            syntax = Syntax(json.dumps(contexts, indent=2, default=str), "json", theme="monokai", line_numbers=True)
+            console.print(syntax)
+            console.print("="*60)
+        
+        elif format == 'tree':
+            tree = Tree("📋 Stored Contexts")
+            for context in contexts:
+                node = tree.add(f"[cyan]{context['id']}[/cyan] - [green]{context.get('source_window') or '-'}[/green]")
+                node.add(f"[dim]📅 {context.get('created_at')}[/dim]")
+                if context.get('screenshot_path'):
+                    node.add("📷 Screenshot")
+            
+            console.print("\n" + "="*60)
+            console.print(tree)
+            console.print("="*60)
+        
+        else:  # brief
+            brief_lines = [
+                f"[cyan]{context['id']}[/cyan] - [green]{context.get('source_window') or '-'}[/green] - [yellow]{context.get('created_at')}[/yellow]"
+                for context in contexts
+            ]
+            list_panel = Panel(
+                "\n".join(brief_lines),
+                title="📋 Context List",
+                border_style="cyan",
+                box=box.ROUNDED
+            )
+            console.print("\n" + "="*60)
+            console.print(list_panel)
+            console.print("="*60)
+        
+        # Save to file if requested
+        if output:
+            with open(output, 'w') as f:
+                json.dump(contexts, f, indent=2, default=str)
+            console.print(f"[green]✅[/green] Context list saved to: {output}")
+        
+        display_success(f"Found {len(contexts)} contexts!")
+        
+    except Exception as e:
+        display_error(f"Failed to list contexts: {e}", e)
 
 @cli.command()
 @click.option('--detailed', is_flag=True, help='Show detailed statistics')
@@ -1028,142 +649,75 @@ def stats(detailed, output, format):
     
     app = get_app()
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
+    try:
+        db_stats = app.database.get_stats()
+        db_path = app.database.db_path
+        stats_data = {
+            'total_contexts': db_stats['total_captures'],
+            'total_artifacts': db_stats['total_artifacts'],
+            'database_path': str(db_path),
+            'database_size_bytes': os.path.getsize(db_path) if os.path.exists(db_path) else 0
+        }
         
-        task = progress.add_task("📊 Collecting statistics...")
+        if format == 'table':
+            stats_table = Table(title="📊 Database Statistics", box=box.DOUBLE)
+            stats_table.add_column("Metric", style="cyan", no_wrap=True)
+            stats_table.add_column("Value", style="green")
+            stats_table.add_column("Description", style="dim")
+            
+            stats_table.add_row("Total Contexts", f"[bold]{stats_data['total_contexts']}[/bold]", "Number of context captures")
+            stats_table.add_row("Artifacts", f"[bold]{stats_data['total_artifacts']}[/bold]", "Number of stored artifacts")
+            stats_table.add_row("Database Size", f"[bold]{stats_data['database_size_bytes']:,} bytes[/bold]", "Current database file size")
+            if detailed:
+                stats_table.add_row("Database Path", stats_data['database_path'], "SQLite database file")
+            
+            console.print("\n" + "="*70)
+            console.print(stats_table)
+            console.print("="*70)
         
-        try:
-            progress.update(task, description="🗄️ Analyzing database...", completed=50)
-            time.sleep(1)
-            
-            progress.update(task, description="📈 Generating report...", completed=80)
-            time.sleep(0.5)
-            
-            progress.update(task, description="✅ Complete!", completed=100)
-            
-            # Mock statistics
-            stats_data = {
-                'total_contexts': 25,
-                'total_screenshots': 15,
-                'total_urls_extracted': 87,
-                'total_text_chars': 245000,
-                'database_size_mb': 12.8,
-                'platform_distribution': {'Linux': 12, 'Windows': 8, 'macOS': 5},
-                'extraction_success_rate': 0.96,
-                'last_capture': '2023-12-01T15:30:00',
-                'avg_capture_time': 2.3,
-                'storage_efficiency': 0.94
-            }
-            
-            if format == 'table':
-                # Create statistics table
-                stats_table = Table(title="📊 Database Statistics", box=box.DOUBLE)
-                stats_table.add_column("Metric", style="cyan", no_wrap=True)
-                stats_table.add_column("Value", style="green")
-                stats_table.add_column("Description", style="dim")
-                
-                stats_table.add_row("Total Contexts", f"[bold]{stats_data['total_contexts']}[/bold]", "Number of context captures")
-                stats_table.add_row("Screenshots", f"[bold]{stats_data['total_screenshots']}[/bold]", "Number of screenshots captured")
-                stats_table.add_row("URLs Extracted", f"[bold]{stats_data['total_urls_extracted']}[/bold]", "Total URLs found and processed")
-                stats_table.add_row("Text Characters", f"[bold]{stats_data['total_text_chars']:,}[/bold]", "Total characters extracted")
-                stats_table.add_row("Database Size", f"[bold]{stats_data['database_size_mb']} MB[/bold]", "Current database file size")
-                stats_table.add_row("Success Rate", f"[bold]{stats_data['extraction_success_rate']*100:.1f}%[/bold]", "Extraction success percentage")
-                stats_table.add_row("Last Capture", stats_data['last_capture'], "Timestamp of most recent capture")
-                stats_table.add_row("Avg Capture Time", f"[bold]{stats_data['avg_capture_time']}s[/bold]", "Average time per capture")
-                stats_table.add_row("Storage Efficiency", f"[bold]{stats_data['storage_efficiency']*100:.1f}%[/bold]", "Data compression efficiency")
-                
-                # Platform distribution (if detailed)
-                if detailed:
-                    platform_tree = Tree("Platform Distribution")
-                    for platform, count in stats_data['platform_distribution'].items():
-                        percentage = (count / stats_data['total_contexts']) * 100
-                        platform_tree.add(f"[green]{platform}[/green]: [bold]{count}[/bold] contexts ({percentage:.1f}%)")
-                    
-                    stats_table.add_row("Platform Breakdown", platform_tree, "Distribution by operating system")
-                
-                console.print("\n" + "="*70)
-                console.print(stats_table)
-                console.print("="*70)
-                
-                # Additional detailed stats if requested
-                if detailed:
-                    console.print("\n[bold blue]📈 Performance Metrics[/bold blue]")
-                    
-                    performance_panel = Panel(
-                        f"⚡ Average capture time: [green]{stats_data['avg_capture_time']}s[/green]\n"
-                        f"🧠 Average extraction time: [green]1.8s[/green]\n"
-                        f"💾 Storage efficiency: [green]{stats_data['storage_efficiency']*100:.1f}%[/green]\n"
-                        f"👁️ OCR success rate: [green]87.5%[/green]\n"
-                        f"🔗 URL detection accuracy: [green]98.1%[/green]\n"
-                        f"🧠 Memory usage: [green]45 MB[/green]\n"
-                        f"💿 Disk I/O operations: [green]1,247[/green]\n"
-                        f"🎯 Context analysis success: [green]94.2%[/green]",
-                        title="Performance Analytics",
-                        border_style="blue",
-                        box=box.ROUNDED
-                    )
-                    console.print(performance_panel)
-            
-            elif format == 'json':
-                console.print("\n" + "="*60)
-                syntax = Syntax(json.dumps(stats_data, indent=2), "json", theme="monokai", line_numbers=True)
-                console.print(syntax)
-                console.print("="*60)
-            
-            else:  # markdown
-                md_content = f"""# ContextBox Statistics Report
+        elif format == 'json':
+            console.print("\n" + "="*60)
+            syntax = Syntax(json.dumps(stats_data, indent=2), "json", theme="monokai", line_numbers=True)
+            console.print(syntax)
+            console.print("="*60)
+        
+        else:  # markdown
+            md_content = f"""# ContextBox Statistics Report
 
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ## Overview
 - **Total Contexts**: {stats_data['total_contexts']}
-- **Screenshots Captured**: {stats_data['total_screenshots']}
-- **URLs Extracted**: {stats_data['total_urls_extracted']}
-- **Text Characters**: {stats_data['total_text_chars']:,}
-- **Database Size**: {stats_data['database_size_mb']} MB
-- **Success Rate**: {stats_data['extraction_success_rate']*100:.1f}%
-- **Last Capture**: {stats_data['last_capture']}
-
-## Performance
-- **Average Capture Time**: {stats_data['avg_capture_time']}s
-- **Storage Efficiency**: {stats_data['storage_efficiency']*100:.1f}%
-
-## Platform Distribution
+- **Artifacts**: {stats_data['total_artifacts']}
+- **Database Size**: {stats_data['database_size_bytes']:,} bytes
+- **Database Path**: {stats_data['database_path']}
 """
-                for platform, count in stats_data['platform_distribution'].items():
-                    percentage = (count / stats_data['total_contexts']) * 100
-                    md_content += f"- **{platform}**: {count} contexts ({percentage:.1f}%)\n"
-                
-                console.print("\n" + "="*60)
-                console.print(Panel(md_content, title="📊 Statistics Report", border_style="blue"))
-                console.print("="*60)
-            
-            # Save to file if requested
-            if output:
-                if format == 'json':
-                    with open(output, 'w') as f:
-                        json.dump(stats_data, f, indent=2)
-                else:
-                    with open(output, 'w') as f:
-                        f.write(md_content if format == 'markdown' else str(stats_data))
-                console.print(f"[green]✅[/green] Statistics saved to: {output}")
-            
-            display_success("Statistics generated successfully!")
-            
-        except Exception as e:
-            display_error(f"Failed to generate statistics: {e}", e)
+            console.print("\n" + "="*60)
+            console.print(Panel(md_content, title="📊 Statistics Report", border_style="blue"))
+            console.print("="*60)
+        
+        # Save to file if requested
+        if output:
+            if format == 'json':
+                with open(output, 'w') as f:
+                    json.dump(stats_data, f, indent=2)
+            else:
+                with open(output, 'w') as f:
+                    f.write(md_content if format == 'markdown' else str(stats_data))
+            console.print(f"[green]✅[/green] Statistics saved to: {output}")
+        
+        display_success("Statistics generated successfully!")
+        
+    except Exception as e:
+        display_error(f"Failed to generate statistics: {e}", e)
 
 @cli.command()
 @click.option('--api-key', is_flag=True, help='Configure API key for AI features')
 @click.option('--view', is_flag=True, help='View current configuration')
 @click.option('--reset', is_flag=True, help='Reset configuration to defaults')
 @click.option('--profile', '-p', default='default', help='Configuration profile to use')
-@click.option('--set', nargs=2, help='Set configuration key value (key value)', is_flag=False)
-def config(api_key, view, reset, profile, set):
+@click.option('--set', 'set_key', nargs=2, help='Set configuration key value (key value)')
+def config(api_key, view, reset, profile, set_key):
     """⚙️ Configure API keys and application settings."""
     
     config_dir = get_app_data_dir()
@@ -1209,7 +763,7 @@ def config(api_key, view, reset, profile, set):
                 display_error(f"Failed to reset configuration: {e}", exit=False)
         return
     
-    if 'set_key' in locals() and set_key:
+    if set_key:
         key, value = set_key
         try:
             # Load existing config
@@ -1262,6 +816,11 @@ def config(api_key, view, reset, profile, set):
     console.print(config_panel)
     console.print("="*60)
 
+def _has_screenshot(context: Dict) -> bool:
+    """Stored contexts carry artifacts as a list of rows; only CLI capture dicts map 'screenshot'."""
+    artifacts = context.get('artifacts')
+    return isinstance(artifacts, dict) and bool(artifacts.get('screenshot'))
+
 @cli.command()
 @click.option('--format', type=click.Choice(['json', 'csv', 'txt', 'markdown']), default='json',
               help='Export format')
@@ -1297,11 +856,11 @@ def export(format, output, context_id, all_contexts, include_artifacts, compress
                     display_error(f"Context with ID '{context_id}' not found", exit=False)
                     return
                 contexts = [context]
-            elif all_contexts:
-                console.print("[yellow]📤 Exporting all contexts...[/yellow]")
-                contexts = []  # Would implement full retrieval
             else:
-                contexts = []  # Would get recent contexts
+                if all_contexts:
+                    console.print("[yellow]📤 Exporting all contexts...[/yellow]")
+                # limit=-1 means no limit in SQLite
+                contexts = [app.get_context(str(c['id'])) for c in app.database.list_captures(limit=-1)]
             
             progress.update(task, description="🔄 Processing data...", completed=40)
             time.sleep(1)
@@ -1360,7 +919,7 @@ def export(format, output, context_id, all_contexts, include_artifacts, compress
                             context.get('status', 'N/A'),
                             len(context.get('extracted', {}).get('text', '')),
                             len(context.get('extracted', {}).get('urls', [])),
-                            'Yes' if context.get('artifacts', {}).get('screenshot') else 'No'
+                            'Yes' if _has_screenshot(context) else 'No'
                         ])
             
             elif format == 'markdown':
@@ -1382,7 +941,7 @@ def export(format, output, context_id, all_contexts, include_artifacts, compress
 - **Status**: {context.get('status', 'N/A')}
 - **Text Length**: {len(context.get('extracted', {}).get('text', ''))} characters
 - **URLs Found**: {len(context.get('extracted', {}).get('urls', []))}
-- **Screenshot**: {'✅' if context.get('artifacts', {}).get('screenshot') else '❌'}
+- **Screenshot**: {'✅' if _has_screenshot(context) else '❌'}
 
 """
                     
@@ -1579,15 +1138,6 @@ def import_command(input_file, format, merge, overwrite, validate):
             
         except Exception as e:
             display_error(f"Import failed: {e}", e)
-
-# Autocomplete configuration
-def complete_command_names(ctx, args, incomplete):
-    """Autocomplete command names."""
-    commands = [
-        'capture', 'ask', 'summarize', 'search', 'list', 
-        'stats', 'config', 'export', 'import', 'help', 'version'
-    ]
-    return [cmd for cmd in commands if cmd.startswith(incomplete)]
 
 # Add shell completion for bash/zsh/fish
 if __name__ == '__main__':

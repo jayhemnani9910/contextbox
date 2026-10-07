@@ -75,7 +75,7 @@ class ScreenshotCapture:
                 tools.append('gnome-screenshot')
         
         # X11/general tools
-        if self.check_tool_availability('gnome-screenshot'):
+        if self.check_tool_availability('gnome-screenshot') and 'gnome-screenshot' not in tools:
             tools.append('gnome-screenshot')
         if self.check_tool_availability('scrot'):
             tools.append('scrot')
@@ -157,7 +157,7 @@ class ScreenshotCapture:
         output_path = self.media_dir / output_filename
         
         # Try active window detection first
-        if not self.is_wayland() and self.check_tool_availability('wmctrl'):
+        if not self.is_wayland() and self.check_tool_availability('xdotool'):
             window_id = self._get_active_window_id()
             if window_id:
                 tools = self.get_available_tools()
@@ -293,11 +293,9 @@ class ScreenshotCapture:
         return False
     
     def _capture_window_with_maim(self, output_path: str, window_id: str) -> bool:
-        """Capture specific window using maim (simplified approach)"""
+        """Capture specific window using maim"""
         try:
-            # This is a basic implementation - in practice, you'd need to get
-            # window geometry and use maim with coordinates
-            cmd = ['maim', '--hidecursor', output_path]
+            cmd = ['maim', '--hidecursor', '-i', window_id, output_path]
             subprocess.run(cmd, check=True, timeout=30)
             return True
         except Exception as e:
@@ -326,44 +324,20 @@ class ScreenshotCapture:
     def _capture_with_xfce4_screenshooter(self, output_path: str) -> bool:
         """Capture screenshot using XFCE4 Screenshooter"""
         try:
-            subprocess.run(['xfce4-screenshooter', '-f', '-s', str(self.media_dir)], check=True, timeout=30)
-            # Rename the generated file
-            generated_files = list(self.media_dir.glob("screenshot*.png"))
-            if generated_files:
-                latest_file = max(generated_files, key=os.path.getctime)
-                if latest_file.name != output_path:
-                    latest_file.rename(output_path)
-                return True
+            subprocess.run(['xfce4-screenshooter', '-f', '-s', output_path], check=True, timeout=30)
+            return os.path.exists(output_path)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logger.warning(f"XFCE4 Screenshooter capture failed: {e}")
         return False
     
     def _get_active_window_id(self) -> Optional[str]:
-        """Get active window ID using wmctrl"""
+        """Get active window ID using xdotool"""
         try:
             result = subprocess.run(
-                ['wmctrl', '-d'], capture_output=True, text=True, timeout=5
+                ['xdotool', 'getactivewindow'], capture_output=True, text=True, timeout=5
             )
-            if result.returncode == 0:
-                # Get active workspace
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if line.startswith('*'):
-                        workspace_info = line.split()
-                        if len(workspace_info) > 0:
-                            workspace = workspace_info[0]
-                            break
-                
-                # Get active window on current workspace
-                result = subprocess.run(
-                    ['wmctrl', '-R', '-1'], capture_output=True, text=True, timeout=5
-                )
-                if result.returncode == 0:
-                    # Extract window ID from output
-                    for line in result.stdout.strip().split('\n'):
-                        parts = line.split()
-                        if len(parts) > 0:
-                            return parts[0]
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, Exception) as e:
             logger.warning(f"Failed to get active window ID: {e}")
         
@@ -624,6 +598,7 @@ class ContextCapture:
         
         # Start periodic screenshot capture
         import threading
+        self._stop_event = threading.Event()
         self.capture_thread = threading.Thread(target=self._capture_loop, daemon=False)
         self.capture_thread.start()
     
@@ -635,6 +610,9 @@ class ContextCapture:
         
         self.logger.info("Stopping context capture...")
         self.is_running = False
+        self._stop_event.set()
+        # Wait for the loop to exit so a quick start() cannot leave two threads running
+        self.capture_thread.join()
         self.logger.info("Context capture stopped")
     
     def _capture_loop(self) -> None:
@@ -644,7 +622,7 @@ class ContextCapture:
         
         try:
             loop_counter = 0
-            while self.is_running:
+            while not self._stop_event.is_set():
                 loop_counter += 1
                 print(f"[CAPTURE THREAD] Cycle #{loop_counter} starting...", flush=True)
                 # Perform scheduled capture
@@ -660,7 +638,8 @@ class ContextCapture:
                 # Wait for next capture
                 print(f"[CAPTURE THREAD] Sleeping for {self.interval} seconds...", flush=True)
                 self.logger.debug(f"Sleeping for {self.interval} seconds until next capture...")
-                time.sleep(self.interval)
+                if self._stop_event.wait(self.interval):
+                    break
                 
         except Exception as e:
             self.logger.error(f"Error in capture loop: {e}")
@@ -757,37 +736,18 @@ class ContextCapture:
     def _get_active_window_info(self) -> dict:
         """Get information about currently active window."""
         try:
-            # Try to get active window title using xdotool or wmctrl
-            tools = ['xdotool', 'wmctrl']
-            for tool in tools:
-                if self.screenshot_capture.check_tool_availability(tool):
-                    if tool == 'xdotool':
-                        result = subprocess.run(
-                            ['xdotool', 'getactivewindow', 'getwindowname'],
-                            capture_output=True, text=True, timeout=5
-                        )
-                        if result.returncode == 0:
-                            return {
-                                'title': result.stdout.strip(),
-                                'application': 'Unknown',
-                                'window_id': 'active'
-                            }
-                    elif tool == 'wmctrl':
-                        result = subprocess.run(
-                            ['wmctrl', '-a', ':ACTIVE:'],
-                            capture_output=True, text=True, timeout=5
-                        )
-                        if result.returncode == 0:
-                            # Parse output to get window title
-                            lines = result.stdout.strip().split('\n')
-                            if lines:
-                                parts = lines[0].split(None, 4)
-                                if len(parts) > 4:
-                                    return {
-                                        'title': parts[4],
-                                        'application': parts[0] if len(parts) > 0 else 'Unknown',
-                                        'window_id': parts[0] if len(parts) > 0 else 'active'
-                                    }
+            # Try to get active window title using xdotool
+            if self.screenshot_capture.check_tool_availability('xdotool'):
+                result = subprocess.run(
+                    ['xdotool', 'getactivewindow', 'getwindowname'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    return {
+                        'title': result.stdout.strip(),
+                        'application': 'Unknown',
+                        'window_id': 'active'
+                    }
         except Exception as e:
             self.logger.debug(f"Failed to get active window info: {e}")
         

@@ -39,7 +39,7 @@ const commands = [
   },
   {
     name: 'ask',
-    description: 'Ask questions about captured context using AI',
+    description: 'Ask questions about captured context using AI. Not implemented yet in the CLI.',
     usage: 'contextbox ask QUESTION [OPTIONS]',
     options: [
       { flag: '--context-id ID', desc: 'Specific context to ask about' },
@@ -50,7 +50,7 @@ const commands = [
   },
   {
     name: 'summarize',
-    description: 'Generate intelligent summaries of captured contexts',
+    description: 'Generate intelligent summaries of captured contexts. Not implemented yet in the CLI.',
     usage: 'contextbox summarize [OPTIONS]',
     options: [
       { flag: '--context-id ID', desc: 'Specific context to summarize' },
@@ -116,7 +116,7 @@ function Commands() {
 
             <div className="mb-4">
               <h3 className="text-sm font-medium text-gray-500 uppercase mb-2">Options</h3>
-              <div className="bg-gray-50 rounded-lg overflow-hidden">
+              <div className="bg-gray-50 rounded-lg overflow-x-auto">
                 <table className="min-w-full">
                   <tbody className="divide-y divide-gray-200">
                     {cmd.options.map((opt, i) => (

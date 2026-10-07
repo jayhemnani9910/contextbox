@@ -14,7 +14,6 @@ This module provides comprehensive YouTube transcript extraction functionality i
 import re
 import json
 import logging
-import tempfile
 import subprocess
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple, Union
@@ -24,12 +23,13 @@ import hashlib
 
 # Optional dependencies
 try:
-    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
     from youtube_transcript_api.formatters import TextFormatter
     YOUTUBE_API_AVAILABLE = True
 except ImportError:
     YOUTUBE_API_AVAILABLE = False
     YouTubeTranscriptApi = None
+    NoTranscriptFound = None
     TextFormatter = None
 
 try:
@@ -363,18 +363,18 @@ class YouTubeTranscriptExtractor:
             
             # First try manually created transcripts
             try:
-                transcript = transcript_list.find_transcript(self.preferred_languages)
+                transcript = transcript_list.find_manually_created_transcript(self.preferred_languages)
                 language = transcript.language_code
-            except:
+            except NoTranscriptFound:
                 # Fallback to auto-generated transcripts
                 try:
-                    transcript = transcript_list.find_transcript(self.preferred_languages)
+                    transcript = transcript_list.find_generated_transcript(self.preferred_languages)
                     language = transcript.language_code
-                except:
+                except NoTranscriptFound:
                     # Use any available transcript
-                    all_transcripts = transcript_list
+                    all_transcripts = list(transcript_list)
                     if all_transcripts:
-                        transcript = list(all_transcripts)[0]
+                        transcript = all_transcripts[0]
                         language = transcript.language_code
             
             if not transcript:
@@ -439,18 +439,18 @@ class YouTubeTranscriptExtractor:
                 language = None
                 is_auto_generated = False
                 
-                # Check manual subtitles first
+                # Check manual subtitles first (vtt only, the format the parser reads)
                 for lang in self.preferred_languages:
-                    if lang in subtitles and subtitles[lang]:
-                        subtitle_url = subtitles[lang][0].get('url')
+                    subtitle_url = self._find_vtt_url(subtitles.get(lang))
+                    if subtitle_url:
                         language = lang
                         break
                 
                 # Fallback to auto-generated subtitles
                 if not subtitle_url:
                     for lang in self.preferred_languages:
-                        if lang in automatic_captions and automatic_captions[lang]:
-                            subtitle_url = automatic_captions[lang][0].get('url')
+                        subtitle_url = self._find_vtt_url(automatic_captions.get(lang))
+                        if subtitle_url:
                             language = lang
                             is_auto_generated = True
                             break
@@ -460,6 +460,8 @@ class YouTubeTranscriptExtractor:
                 
                 # Download and parse subtitle file
                 segments = self._download_and_parse_subtitles(subtitle_url)
+                if not segments:
+                    raise ValueError(f"No subtitle segments parsed for video {video_id}")
                 
                 return TranscriptData(
                     video_id=video_id,
@@ -467,7 +469,7 @@ class YouTubeTranscriptExtractor:
                     is_auto_generated=is_auto_generated,
                     segments=segments,
                     metadata={
-                        'subtitle_format': 'srt',
+                        'subtitle_format': 'vtt',
                         'info_extra': {
                             'title': info.get('title'),
                             'uploader': info.get('uploader'),
@@ -479,44 +481,39 @@ class YouTubeTranscriptExtractor:
         except Exception as e:
             raise RuntimeError(f"yt-dlp extraction failed: {e}")
     
+    @staticmethod
+    def _find_vtt_url(formats: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+        """Return the URL of the vtt entry in a yt-dlp subtitle format list."""
+        for fmt in formats or []:
+            if fmt.get('ext') == 'vtt':
+                return fmt.get('url')
+        return None
+    
     def _download_and_parse_subtitles(self, subtitle_url: str) -> List[TranscriptSegment]:
         """Download and parse subtitle file from URL."""
-        try:
-            import requests
-            
-            response = requests.get(subtitle_url)
-            response.raise_for_status()
-            content = response.text
-            
-            return self._parse_srt(content)
-            
-        except Exception as e:
-            # Try using yt-dlp to download subtitle
-            try:
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.srt', delete=False) as tmp_file:
-                    tmp_file.write(content)
-                    tmp_file.flush()
-                    
-                    # Use yt-dlp to convert if needed
-                    return self._parse_srt_file(tmp_file.name)
-            except Exception as inner_e:
-                raise RuntimeError(f"Failed to download and parse subtitles: {inner_e}")
+        import requests
+        
+        response = requests.get(subtitle_url, timeout=30)
+        response.raise_for_status()
+        
+        return self._parse_srt(response.text)
     
     def _parse_srt(self, srt_content: str) -> List[TranscriptSegment]:
-        """Parse SRT subtitle content."""
+        """Parse SRT or VTT subtitle content."""
         segments = []
         blocks = re.split(r'\n\s*\n', srt_content.strip())
         
         for block in blocks:
             lines = block.strip().split('\n')
             if len(lines) >= 2:
-                # Skip sequence number
-                timestamp_line = lines[1]
-                text_lines = lines[2:]
+                # SRT has a sequence number before the timestamp, VTT usually does not
+                ts_index = 1 if '-->' in lines[1] else 0
+                timestamp_line = lines[ts_index]
+                text_lines = lines[ts_index + 1:]
                 
-                # Parse timestamp
+                # Parse timestamp (SRT uses ',' before millis, VTT uses '.')
                 timestamp_match = re.match(
-                    r'(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})',
+                    r'(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})',
                     timestamp_line
                 )
                 
@@ -526,7 +523,8 @@ class YouTubeTranscriptExtractor:
                     end = self._srt_time_to_seconds(timestamp_match.group(5), timestamp_match.group(6), 
                                                   timestamp_match.group(7), timestamp_match.group(8))
                     
-                    text = ' '.join(text_lines)
+                    # Drop VTT inline tags such as <c> and <00:00:01.000>
+                    text = re.sub(r'<[^>]+>', '', ' '.join(text_lines))
                     
                     segment = TranscriptSegment(
                         start=start,
@@ -541,12 +539,6 @@ class YouTubeTranscriptExtractor:
     def _srt_time_to_seconds(self, hours: str, minutes: str, seconds: str, milliseconds: str) -> float:
         """Convert SRT time format to seconds."""
         return (int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000)
-    
-    def _parse_srt_file(self, file_path: str) -> List[TranscriptSegment]:
-        """Parse SRT file."""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        return self._parse_srt(content)
     
     def _get_video_info(self, video_id: str) -> Dict[str, Any]:
         """Get video metadata using yt-dlp."""

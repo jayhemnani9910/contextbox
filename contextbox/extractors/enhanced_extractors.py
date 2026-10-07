@@ -69,6 +69,8 @@ class ContentExtractor:
         self.logger = logging.getLogger(__name__)
         
         # Initialize main extractor
+        if EnhancedContextExtractor is None:
+            raise ContentExtractionError("core extractors not available")
         self.extractor = EnhancedContextExtractor(self.config.get('extractors', {}))
         
         # Configure settings
@@ -384,8 +386,9 @@ class ContentExtractor:
         Args:
             config_updates: Dictionary of configuration updates
         """
+        settable = ('auto_extract', 'output_format', 'store_in_database', 'enabled_extractors')
         for key, value in config_updates.items():
-            if hasattr(self, key):
+            if key in settable:
                 setattr(self, key, value)
             else:
                 self.config[key] = value

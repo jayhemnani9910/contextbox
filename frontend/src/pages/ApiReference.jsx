@@ -20,17 +20,17 @@ function ApiReference() {
 # Initialize
 app = ContextBox(config={})
 
-# Capture current screen
-context = app.capture()
-
-# Store context
-context_id = app.store_context(context)
+# Capture and store context data
+context_id = app.capture_context({
+    "active_window": {"title": "Terminal"},
+    "clipboard": "copied text",
+})
 
 # Retrieve context
 retrieved = app.get_context(context_id)
 
 # Search contexts
-results = app.search("keyword")`}
+results = app.database.search_contexts("keyword")`}
         />
       </section>
 
@@ -71,7 +71,7 @@ async with backend:
       {/* Available Models */}
       <section className="mb-12">
         <h2 className="text-2xl font-semibold text-gray-900 mb-4">Available Models</h2>
-        <div className="bg-gray-50 rounded-lg overflow-hidden">
+        <div className="bg-gray-50 rounded-lg overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-gray-100">
               <tr>
@@ -119,11 +119,8 @@ async with backend:
         </p>
 
         <CodeBlock
-          code={`from contextbox.extractors import (
-    WebPageExtractor,
-    WikipediaExtractor,
-    YouTubeExtractor
-)
+          code={`from contextbox.extractors import WebPageExtractor, WikipediaExtractor
+from contextbox.extractors.classifier import YouTubeExtractor
 
 # Web page extraction
 extractor = WebPageExtractor()
@@ -131,7 +128,7 @@ content = extractor.extract("https://example.com")
 
 # Wikipedia
 wiki = WikipediaExtractor()
-article = wiki.extract("Python (programming language)")
+article = wiki.extract_from_url("https://en.wikipedia.org/wiki/Python_(programming_language)")
 
 # YouTube
 yt = YouTubeExtractor()

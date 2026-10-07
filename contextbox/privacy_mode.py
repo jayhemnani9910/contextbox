@@ -14,7 +14,7 @@ import os
 from typing import Dict, Any, List, Optional, Tuple, Union
 from datetime import datetime
 from pathlib import Path
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -116,11 +116,12 @@ class DataEncryption:
         return json.loads(decrypted_text)
     
     def is_encrypted(self, data: str) -> bool:
-        """Check if data appears to be encrypted."""
+        """Check if data is encrypted with this instance's key."""
         try:
-            base64.urlsafe_b64decode(data.encode())
+            # Plain strings often decode as base64, so require a real Fernet decrypt
+            self._fernet.decrypt(base64.urlsafe_b64decode(data.encode()))
             return True
-        except Exception:
+        except (InvalidToken, ValueError):
             return False
     
     def get_encryption_info(self) -> Dict[str, Any]:
@@ -336,15 +337,6 @@ class PrivacyMode:
         }
         
         try:
-            # Encrypt sensitive text fields
-            if self.encryption and self._should_encrypt_field('clipboard_text'):
-                if 'clipboard_text' in protected_data and protected_data['clipboard_text']:
-                    protected_data['clipboard_text'] = self.encryption.encrypt_text(
-                        protected_data['clipboard_text']
-                    )
-                    protection_log['sensitive_fields_encrypted'].append('clipboard_text')
-                    protection_log['encryption_applied'] = True
-            
             # Redact PII from text fields
             if self.redactor and self._should_redact_field('clipboard_text'):
                 if 'clipboard_text' in protected_data and protected_data['clipboard_text']:
@@ -353,6 +345,15 @@ class PrivacyMode:
                     protected_data['clipboard_text'] = redacted_text
                     protection_log['redaction_applied'] = True
                     protection_log['pii_detected']['clipboard_text'] = redaction_report
+            
+            # Encrypt sensitive text fields (after redaction, so PII is gone first)
+            if self.encryption and self._should_encrypt_field('clipboard_text'):
+                if 'clipboard_text' in protected_data and protected_data['clipboard_text']:
+                    protected_data['clipboard_text'] = self.encryption.encrypt_text(
+                        protected_data['clipboard_text']
+                    )
+                    protection_log['sensitive_fields_encrypted'].append('clipboard_text')
+                    protection_log['encryption_applied'] = True
             
             # Redact PII from notes
             if self.redactor and self._should_redact_field('notes'):

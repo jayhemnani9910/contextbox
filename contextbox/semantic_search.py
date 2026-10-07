@@ -18,7 +18,6 @@ import pickle
 # Try to import sentence transformers
 try:
     from sentence_transformers import SentenceTransformer
-    from sklearn.metrics.pairwise import cosine_similarity
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
@@ -75,15 +74,17 @@ class EmbeddingManager:
     
     def _fallback_embedding(self, text: str) -> List[float]:
         """Generate simple fallback embedding."""
-        # Simple hash-based embedding as fallback
+        # Simple hashed bag-of-words embedding as fallback
         words = text.lower().split()
         embedding = np.zeros(384)  # Default embedding size
         
         for word in words:
             word_hash = int(hashlib.md5(word.encode()).hexdigest(), 16)
-            for i in range(0, min(384, len(str(word_hash)) // 2), 2):
-                if i < len(embedding):
-                    embedding[i] = (word_hash >> (i // 2)) % 1000 / 1000.0
+            embedding[word_hash % len(embedding)] += 1.0
+        
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding /= norm
         
         return embedding.tolist()
     
@@ -102,10 +103,12 @@ class EmbeddingManager:
     def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         """Calculate cosine similarity between two embeddings."""
         try:
-            vec1 = np.array(embedding1).reshape(1, -1)
-            vec2 = np.array(embedding2).reshape(1, -1)
-            similarity = cosine_similarity(vec1, vec2)[0][0]
-            return float(similarity)
+            vec1 = np.asarray(embedding1, dtype=float)
+            vec2 = np.asarray(embedding2, dtype=float)
+            norms = np.linalg.norm(vec1) * np.linalg.norm(vec2)
+            if norms == 0:
+                return 0.0
+            return float(np.dot(vec1, vec2) / norms)
         except Exception as e:
             self.logger.error(f"Similarity calculation failed: {e}")
             return 0.0
@@ -117,9 +120,12 @@ class EmbeddingManager:
             if not embeddings:
                 return []
             
-            query_vec = np.array(query_embedding).reshape(1, -1)
-            embeddings_matrix = np.array(embeddings)
-            similarities = cosine_similarity(query_vec, embeddings_matrix)[0]
+            query_vec = np.asarray(query_embedding, dtype=float)
+            embeddings_matrix = np.asarray(embeddings, dtype=float)
+            norms = np.linalg.norm(embeddings_matrix, axis=1) * np.linalg.norm(query_vec)
+            dots = embeddings_matrix @ query_vec
+            # Zero vectors get similarity 0 instead of a divide-by-zero NaN
+            similarities = np.divide(dots, norms, out=np.zeros_like(dots), where=norms > 0)
             return similarities.tolist()
         except Exception as e:
             self.logger.error(f"Batch similarity calculation failed: {e}")
@@ -302,7 +308,7 @@ class SemanticSearchIndex:
         
         # Initialize components
         self.embedding_manager = EmbeddingManager(cache_dir=cache_dir)
-        self.embedding_cache = EmbeddingCache(cache_dir=cache_dir)
+        self.embedding_cache = EmbeddingCache(cache_dir=cache_dir) if cache_dir else EmbeddingCache()
         
         # Search configuration
         self.similarity_threshold = 0.6
@@ -478,6 +484,8 @@ class SemanticSearchIndex:
             for i, similarity in enumerate(similarities):
                 if similarity >= (similarity_threshold or self.similarity_threshold):
                     embedding_info = cached_embeddings['info'][i]
+                    if artifact_types and embedding_info['artifact_type'] not in artifact_types:
+                        continue
                     
                     result = {
                         'artifact_id': embedding_info['artifact_id'],
@@ -631,6 +639,7 @@ class SemanticSearchIndex:
         """Get semantic search statistics."""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
                 # Get embedding statistics
                 cursor = conn.execute("""
                     SELECT 

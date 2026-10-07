@@ -186,7 +186,7 @@ class RateLimiter(Protocol):
 class CostTracker(Protocol):
     """Protocol for cost tracking."""
     
-    def track_request(
+    async def track_request(
         self, 
         model: str, 
         usage: TokenUsage, 
@@ -318,6 +318,7 @@ class BaseLLMBackend(abc.ABC):
     ) -> AsyncIterator[str]:
         """Stream chat completion (optional)."""
         raise NotImplementedError("Streaming not supported")
+        yield  # makes this an async generator, so `async for` gets the error
     
     async def stream_text_completion(
         self, 
@@ -325,6 +326,7 @@ class BaseLLMBackend(abc.ABC):
     ) -> AsyncIterator[str]:
         """Stream text completion (optional)."""
         raise NotImplementedError("Streaming not supported")
+        yield  # makes this an async generator, so `async for` gets the error
     
     # Utility methods for subclasses
     
@@ -392,7 +394,7 @@ class BaseLLMBackend(abc.ABC):
         
         return cost_info
     
-    def _track_usage(
+    async def _track_usage(
         self, 
         model: str, 
         usage: TokenUsage, 
@@ -400,7 +402,7 @@ class BaseLLMBackend(abc.ABC):
     ):
         """Track usage statistics."""
         if self._cost_tracker and cost_info:
-            self._cost_tracker.track_request(model, usage, cost_info)
+            await self._cost_tracker.track_request(model, usage, cost_info)
         
         # Update internal stats
         self._usage_stats.setdefault(model, {
@@ -439,9 +441,9 @@ class BaseLLMBackend(abc.ABC):
                 "finish_reason": usage_data.get("finish_reason")
             }
             
-            # Calculate cost if possible
-            model_config = self.provider_config.get_model(model)
-            cost_info = self._calculate_cost(usage, model_config)
+            # Calculate cost if possible; unknown models just get no cost
+            model_config = self.provider_config.models.get(model)
+            cost_info = self._calculate_cost(usage, model_config) if model_config else None
             
             return LLMResponse(
                 content=content,

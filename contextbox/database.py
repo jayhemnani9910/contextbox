@@ -9,14 +9,20 @@ import sqlite3
 import json
 import logging
 import os
+from contextlib import closing, contextmanager
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, Iterator, List, Union
 from pathlib import Path
 
 
 class DatabaseError(Exception):
     """Custom exception for database operations."""
     pass
+
+
+def _escape_like(term: str) -> str:
+    """Escape LIKE wildcards so the term matches literally (use with ESCAPE '\\')."""
+    return term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
 
 class ContextDatabase:
@@ -51,11 +57,15 @@ class ContextDatabase:
         
         self.logger.info(f"ContextDatabase initialized with database: {self.db_path}")
     
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Iterator[sqlite3.Connection]:
         """
-        Create and return a database connection.
+        Open a database connection for one with-block.
         
-        Returns:
+        Commits on success, rolls back on error, and always closes the
+        connection (sqlite3's own context manager does not close it).
+        
+        Yields:
             SQLite connection object
             
         Raises:
@@ -72,11 +82,13 @@ class ContextDatabase:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.row_factory = sqlite3.Row
             
-            return conn
-            
         except sqlite3.Error as e:
             self.logger.error(f"Database connection failed: {e}")
             raise DatabaseError(f"Failed to connect to database: {e}")
+        
+        with closing(conn):
+            with conn:
+                yield conn
     
     def _initialize_database(self) -> None:
         """
@@ -603,7 +615,7 @@ class ContextDatabase:
         Returns:
             List of capture dictionaries matching the term
         """
-        like_term = f"%{search_term}%"
+        like_term = f"%{_escape_like(search_term)}%"
         
         try:
             with self._get_connection() as conn:
@@ -612,12 +624,12 @@ class ContextDatabase:
                     SELECT DISTINCT c.*, CAST(c.id AS TEXT) AS id_text
                     FROM captures c
                     LEFT JOIN artifacts a ON a.capture_id = c.id
-                    WHERE c.source_window LIKE ?
-                       OR c.clipboard_text LIKE ?
-                       OR c.notes LIKE ?
-                       OR a.title LIKE ?
-                       OR a.text LIKE ?
-                       OR a.url LIKE ?
+                    WHERE c.source_window LIKE ? ESCAPE '\\'
+                       OR c.clipboard_text LIKE ? ESCAPE '\\'
+                       OR c.notes LIKE ? ESCAPE '\\'
+                       OR a.title LIKE ? ESCAPE '\\'
+                       OR a.text LIKE ? ESCAPE '\\'
+                       OR a.url LIKE ? ESCAPE '\\'
                     ORDER BY c.created_at DESC
                     LIMIT ?
                     """,
@@ -1082,9 +1094,10 @@ class ContextDatabase:
             with self._get_connection() as conn:
                 query = """
                     SELECT * FROM artifacts 
-                    WHERE (text LIKE ? OR url LIKE ? OR title LIKE ?)
+                    WHERE (text LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')
                 """
-                params = [f'%{search_term}%', f'%{search_term}%', f'%{search_term}%']
+                like_term = f'%{_escape_like(search_term)}%'
+                params = [like_term, like_term, like_term]
                 
                 if artifact_kind:
                     query += " AND kind = ?"

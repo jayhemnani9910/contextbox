@@ -108,6 +108,17 @@ class BaseExtractor(ABC):
     def get_supported_content_types(self) -> List[str]:
         """Return supported content types."""
         pass
+    
+    @staticmethod
+    def _lookup_platform(domain: str, platforms: Dict[str, str], default: str) -> str:
+        """Match a netloc against known domains, ignoring www. and allowing subdomains."""
+        domain = domain.lower()
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        for known, name in platforms.items():
+            if domain == known or domain.endswith('.' + known):
+                return name
+        return default
 
 
 class YouTubeExtractor(BaseExtractor):
@@ -276,7 +287,7 @@ class NewsSiteExtractor(BaseExtractor):
             'washingtonpost.com': 'Washington Post'
         }
         
-        return news_domains.get(domain, 'Generic News')
+        return self._lookup_platform(domain, news_domains, 'Generic News')
     
     def get_supported_content_types(self) -> List[str]:
         return ['article', 'news']
@@ -320,7 +331,7 @@ class DocumentationExtractor(BaseExtractor):
             'developer.mozilla.org': 'MDN Web Docs',
             'docs.python.org': 'Python Documentation',
             'docs.oracle.com': 'Oracle Documentation',
-            'aws.amazon.com/documentation': 'AWS Documentation',
+            'docs.aws.amazon.com': 'AWS Documentation',
             'learn.microsoft.com': 'Microsoft Learn',
             'docs.github.com': 'GitHub Documentation',
             'reactjs.org': 'React Documentation',
@@ -329,7 +340,7 @@ class DocumentationExtractor(BaseExtractor):
             'nodejs.org': 'Node.js Documentation'
         }
         
-        return doc_domains.get(domain, 'Generic Documentation')
+        return self._lookup_platform(domain, doc_domains, 'Generic Documentation')
     
     def get_supported_content_types(self) -> List[str]:
         return ['documentation', 'technical']
@@ -379,7 +390,7 @@ class SocialMediaExtractor(BaseExtractor):
             'tumblr.com': 'Tumblr'
         }
         
-        return social_domains.get(domain, 'Generic Social Media')
+        return self._lookup_platform(domain, social_domains, 'Generic Social Media')
     
     def get_supported_content_types(self) -> List[str]:
         return ['social_media', 'post']
@@ -441,7 +452,7 @@ class SmartContentClassifier:
         
         # Initialize database if available
         self.db = None
-        if DATABASE_AVAILABLE and self.config.get('use_database', True):
+        if DATABASE_AVAILABLE and self.config.get('use_database', False):
             try:
                 self.db = ContextDatabase(self.config.get('db_config', {}))
                 self.logger.info("Database integration enabled")
@@ -537,7 +548,7 @@ class SmartContentClassifier:
                 name='documentation_sites',
                 domain_patterns=[
                     'developer.mozilla.org', 'docs.python.org', 'docs.oracle.com',
-                    'aws.amazon.com/documentation', 'learn.microsoft.com',
+                    'docs.aws.amazon.com', 'learn.microsoft.com',
                     'docs.github.com', 'reactjs.org', 'angular.io', 'vuejs.org',
                     'nodejs.org'
                 ],
@@ -632,7 +643,7 @@ class SmartContentClassifier:
             domain_type=domain_type,
             extractor_name=extractor_name,
             confidence=confidence,
-            metadata=rule.metadata if rule else {},
+            metadata=dict(rule.metadata) if rule else {},
             fallback_extractors=fallback_extractors,
             routing_info=routing_info,
             processing_time=time.time() - start_time
@@ -685,9 +696,9 @@ class SmartContentClassifier:
         domain = parsed.netloc.lower()
         path = parsed.path.lower()
         
-        # Check custom rules first (higher priority)
-        all_rules = self.custom_rules + self.rules
-        sorted_rules = sorted(all_rules, key=lambda r: r.priority)
+        # Check custom rules first (higher priority); ties keep the first match
+        sorted_rules = (sorted(self.custom_rules, key=lambda r: r.priority)
+                        + sorted(self.rules, key=lambda r: r.priority))
         
         for rule in sorted_rules:
             if not rule.enabled:
