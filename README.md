@@ -79,6 +79,12 @@ page["metadata"]["title"]  # "SQLite"
 
 `contextbox.llm` has a client for [GitHub Models](https://github.com/marketplace/models) (`pip install "contextbox[llm] @ git+..."`, then set `GITHUB_TOKEN`). The default model is `gpt-4o-mini`. The CLI does not use it yet.
 
+Install the `web` extra for webpage extraction with `contextbox.extractors.extract_webpage_content`:
+
+```bash
+pip install "contextbox[web] @ git+https://github.com/jayhemnani9910/contextbox.git"
+```
+
 ## Development
 
 ```bash
