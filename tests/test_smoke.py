@@ -1,6 +1,9 @@
 """Smoke tests: store a sample context, find it again, and drive the CLI."""
 
+from importlib.metadata import requires
+
 from click.testing import CliRunner
+from packaging.requirements import Requirement
 
 from contextbox import ContextBox
 from contextbox.cli import cli, extract_urls_enhanced
@@ -33,3 +36,13 @@ def test_cli_version_and_empty_list(tmp_path, monkeypatch):
 
     result = runner.invoke(cli, ["--log-level", "error", "list"])
     assert result.exit_code == 0
+
+
+def test_web_extra_declares_extractor_dependencies():
+    dependencies = [Requirement(value) for value in requires("contextbox")]
+    for extra in ("web", "all"):
+        selected = {
+            dependency.name for dependency in dependencies
+            if dependency.marker and dependency.marker.evaluate({"extra": extra})
+        }
+        assert {"readability-lxml", "lxml"} <= selected
